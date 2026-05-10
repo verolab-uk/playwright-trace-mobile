@@ -401,12 +401,6 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         <section className='mobile-action-pane'>
           <div className='mobile-pane-title'>Snapshot</div>
           <MobileSnapshotPanel action={activeAction} model={model} />
-          {!hideTimeline && <MobileTimeline
-            model={model}
-            actions={actions || []}
-            boundaries={boundaries}
-            onSelected={onActionSelected}
-          />}
         </section>
       </div>
     </div>;
@@ -482,114 +476,6 @@ function useMobileWorkbenchLayout(): boolean {
   }, []);
 
   return matches;
-}
-
-
-const MobileTimeline: React.FC<{
-  model: TraceModel | undefined;
-  actions: ActionTraceEventInContext[];
-  boundaries: Boundaries;
-  onSelected: (action: ActionTraceEventInContext) => void;
-}> = ({ model, actions, boundaries, onSelected }) => {
-  const [measure, ref] = useMeasure<HTMLDivElement>();
-  const activePointer = React.useRef<{ id: number; startX: number; startTime: number } | undefined>();
-  const [currentTime, setCurrentTime] = React.useState(boundaries.minimum);
-
-  React.useEffect(() => {
-    setCurrentTime(boundaries.minimum);
-  }, [boundaries.minimum]);
-
-  const frames = React.useMemo(() => collectScreencastFrames(model), [model]);
-  const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
-  const stripWidth = Math.max(measure.width * 1.8, duration / 1000 * 96, measure.width || 1);
-  const centerX = measure.width / 2;
-  const progress = (currentTime - boundaries.minimum) / duration;
-  const stripOffset = centerX - progress * stripWidth;
-  const currentFrame = findScreencastFrame(model, currentTime);
-  const currentAction = React.useMemo(() => actions.findLast(action => action.startTime <= currentTime), [actions, currentTime]);
-
-  const selectTime = React.useCallback((time: number) => {
-    const clamped = Math.max(boundaries.minimum, Math.min(boundaries.maximum, time));
-    setCurrentTime(clamped);
-    const action = actions.findLast(action => action.startTime <= clamped);
-    if (action)
-      onSelected(action);
-  }, [actions, boundaries.maximum, boundaries.minimum, onSelected]);
-
-  const timeFromClientX = React.useCallback((clientX: number) => {
-    if (!ref.current)
-      return currentTime;
-    const rect = ref.current.getBoundingClientRect();
-    return boundaries.minimum + (clientX - rect.left - stripOffset) / stripWidth * duration;
-  }, [boundaries.minimum, currentTime, duration, ref, stripOffset, stripWidth]);
-
-  const onPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const time = timeFromClientX(event.clientX);
-    selectTime(time);
-    activePointer.current = { id: event.pointerId, startX: event.clientX, startTime: time };
-  }, [selectTime, timeFromClientX]);
-
-  const onPointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointer.current?.id !== event.pointerId)
-      return;
-    event.preventDefault();
-    const delta = event.clientX - activePointer.current.startX;
-    selectTime(activePointer.current.startTime - delta / stripWidth * duration);
-  }, [duration, selectTime, stripWidth]);
-
-  const onPointerUp = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointer.current?.id !== event.pointerId)
-      return;
-    event.preventDefault();
-    activePointer.current = undefined;
-  }, []);
-
-  return <div className='mobile-timeline' ref={ref} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
-    <div className='mobile-timeline-preview-card'>
-      {currentFrame && <img src={model?.createRelativeUrl(`sha1/${currentFrame.sha1}`)} />}
-      <div className='mobile-timeline-preview-meta'>
-        <span>{msToString(currentTime - boundaries.minimum)}</span>
-        <span>{currentAction?.apiName || currentAction?.title || 'Screenshot'}</span>
-      </div>
-    </div>
-    <div className='mobile-timeline-viewport'>
-      <div className='mobile-timeline-strip' style={{ width: stripWidth, transform: `translateX(${stripOffset}px)` }}>
-        {frames.map((frame, index) => <img
-          key={`${frame.sha1}-${index}`}
-          className='mobile-timeline-thumb'
-          src={model?.createRelativeUrl(`sha1/${frame.sha1}`)}
-          style={{ left: `${(frame.timestamp - boundaries.minimum) / duration * stripWidth}px` }}
-        />)}
-        {actions.map(action => <div
-          key={action.callId}
-          className='mobile-timeline-action'
-          style={{ left: `${(action.startTime - boundaries.minimum) / duration * stripWidth}px` }}
-        />)}
-      </div>
-      <div className='mobile-timeline-playhead' />
-    </div>
-    <div className='mobile-timeline-labels'>
-      <span>{msToString(currentTime - boundaries.minimum)}</span>
-      <span>{msToString(duration)}</span>
-    </div>
-  </div>;
-};
-
-function collectScreencastFrames(model: TraceModel | undefined): { sha1: string; width: number; height: number; timestamp: number }[] {
-  const frames = model?.pages.flatMap(page => page.screencastFrames) || [];
-  return frames.sort((a, b) => a.timestamp - b.timestamp);
-}
-
-function findScreencastFrame(model: TraceModel | undefined, time: number): { sha1: string; width: number; height: number; timestamp: number } | undefined {
-  let best: { sha1: string; width: number; height: number; timestamp: number } | undefined;
-  for (const frame of collectScreencastFrames(model)) {
-    if (frame.timestamp > time)
-      break;
-    best = frame;
-  }
-  return best || collectScreencastFrames(model)[0];
 }
 
 

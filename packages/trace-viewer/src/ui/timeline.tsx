@@ -34,14 +34,10 @@ export const Timeline: React.FunctionComponent<{
   setSelectedTime: (time: Boundaries | undefined) => void,
   sdkLanguage: Language,
   scrubber?: React.ReactNode,
-  showFilmStrip?: boolean,
-  touchPreview?: boolean,
-  previewPosition?: 'above' | 'below',
-}> = ({ model, boundaries, onSelected, selectedTime, setSelectedTime, sdkLanguage, scrubber, showFilmStrip = true, touchPreview = false, previewPosition = 'below' }) => {
+}> = ({ model, boundaries, onSelected, selectedTime, setSelectedTime, sdkLanguage, scrubber }) => {
   const [measure, ref] = useMeasure<HTMLDivElement>();
   const [dragWindow, setDragWindow] = React.useState<{ startX: number, endX: number, pivot?: number, type: 'resize' | 'move' } | undefined>();
   const [previewPoint, setPreviewPoint] = React.useState<FilmStripPreviewPoint | undefined>();
-  const activePointerId = React.useRef<number | undefined>();
   const [actionsFilter] = useSetting<ActionGroup[]>('actionsFilter', []);
 
   const { offsets, curtainLeft, curtainRight } = React.useMemo(() => {
@@ -159,41 +155,6 @@ export const Timeline: React.FunctionComponent<{
     setPreviewPoint(undefined);
   }, []);
 
-  const updateTouchPreview = React.useCallback((clientX: number, clientY: number) => {
-    if (!touchPreview || !ref.current)
-      return;
-    const x = clientX - ref.current.getBoundingClientRect().left;
-    const time = positionToTime(measure.width, boundaries, x);
-    const action = actions?.findLast(action => action.startTime <= time);
-    if (action)
-      onSelected(action);
-    setPreviewPoint({ x, clientY, action, sdkLanguage });
-  }, [actions, boundaries, measure, onSelected, ref, sdkLanguage, touchPreview]);
-
-  const onPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!touchPreview)
-      return;
-    event.preventDefault();
-    activePointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    updateTouchPreview(event.clientX, event.clientY);
-  }, [touchPreview, updateTouchPreview]);
-
-  const onPointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!touchPreview || activePointerId.current !== event.pointerId)
-      return;
-    event.preventDefault();
-    updateTouchPreview(event.clientX, event.clientY);
-  }, [touchPreview, updateTouchPreview]);
-
-  const onPointerUp = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerId.current !== event.pointerId)
-      return;
-    event.preventDefault();
-    activePointerId.current = undefined;
-    updateTouchPreview(event.clientX, event.clientY);
-  }, [updateTouchPreview]);
-
   const onPaneDoubleClick = React.useCallback(() => {
     setSelectedTime(undefined);
   }, [setSelectedTime]);
@@ -206,12 +167,9 @@ export const Timeline: React.FunctionComponent<{
       onPaneDoubleClick={onPaneDoubleClick} />}
     <div ref={ref}
       className='timeline-view'
-      onMouseDown={touchPreview ? undefined : onMouseDown}
-      onMouseMove={touchPreview ? undefined : onMouseMove}
-      onMouseLeave={touchPreview ? undefined : onMouseLeave}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}>
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}>
       <div className='timeline-grid'>{
         offsets.map((offset, index) => {
           return <div key={index} className='timeline-divider' style={{ left: offset.position + 'px' }}>
@@ -219,7 +177,7 @@ export const Timeline: React.FunctionComponent<{
           </div>;
         })
       }</div>
-      <FilmStrip boundaries={boundaries} previewPoint={previewPoint} showLanes={showFilmStrip} previewPosition={previewPosition} />
+      <FilmStrip boundaries={boundaries} previewPoint={previewPoint} />
       {scrubber}
       {selectedTime && <div className='timeline-window'>
         <div className='timeline-window-curtain left' style={{ width: curtainLeft }}></div>
