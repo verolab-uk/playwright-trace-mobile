@@ -401,17 +401,11 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         <section className='mobile-action-pane'>
           <div className='mobile-pane-title'>Snapshot</div>
           <MobileSnapshotPanel action={activeAction} model={model} />
-          {!hideTimeline && <Timeline
+          {!hideTimeline && <MobileTimeline
             model={model}
+            actions={actions || []}
             boundaries={boundaries}
             onSelected={onActionSelected}
-            sdkLanguage={sdkLanguage}
-            selectedTime={selectedTime}
-            setSelectedTime={setSelectedTime}
-            scrubber={<PlaybackScrubber playback={playback} />}
-            showFilmStrip={false}
-            touchPreview={true}
-            previewPosition='above'
           />}
         </section>
       </div>
@@ -490,6 +484,92 @@ function useMobileWorkbenchLayout(): boolean {
   return matches;
 }
 
+
+const MobileTimeline: React.FC<{
+  model: TraceModel | undefined;
+  actions: ActionTraceEventInContext[];
+  boundaries: Boundaries;
+  onSelected: (action: ActionTraceEventInContext) => void;
+}> = ({ model, actions, boundaries, onSelected }) => {
+  const [measure, ref] = useMeasure<HTMLDivElement>();
+  const activePointerId = React.useRef<number | undefined>();
+  const [preview, setPreview] = React.useState<{
+    x: number;
+    time: number;
+    action?: ActionTraceEventInContext;
+    frame?: { sha1: string; width: number; height: number };
+  }>();
+
+  const updatePreview = React.useCallback((clientX: number) => {
+    if (!ref.current || !model || !measure.width)
+      return;
+    const rect = ref.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(measure.width, clientX - rect.left));
+    const time = boundaries.minimum + x / measure.width * (boundaries.maximum - boundaries.minimum);
+    const action = actions.findLast(action => action.startTime <= time);
+    const frame = findScreencastFrame(model, time);
+    if (action)
+      onSelected(action);
+    setPreview({ x, time, action, frame });
+  }, [actions, boundaries, measure.width, model, onSelected, ref]);
+
+  const onPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    activePointerId.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updatePreview(event.clientX);
+  }, [updatePreview]);
+
+  const onPointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current !== event.pointerId)
+      return;
+    event.preventDefault();
+    updatePreview(event.clientX);
+  }, [updatePreview]);
+
+  const onPointerUp = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current !== event.pointerId)
+      return;
+    event.preventDefault();
+    updatePreview(event.clientX);
+    activePointerId.current = undefined;
+  }, [updatePreview]);
+
+  const previewWidth = preview?.frame ? Math.min(320, Math.max(160, preview.frame.width / Math.max(preview.frame.width / 320, preview.frame.height / 180, 1))) : 220;
+  const previewHeight = preview?.frame ? preview.frame.height / preview.frame.width * previewWidth : 0;
+  const previewLeft = preview ? Math.max(8, Math.min(measure.width - previewWidth - 8, preview.x - previewWidth / 2)) : 0;
+
+  return <div className='mobile-timeline' ref={ref} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
+    {preview && <div className='mobile-timeline-preview' style={{ left: previewLeft, width: previewWidth }}>
+      {preview.frame && <img src={model?.createRelativeUrl(`sha1/${preview.frame.sha1}`)} width={previewWidth} height={previewHeight} />}
+      <div className='mobile-timeline-preview-title'>
+        <span>{msToString(preview.time - boundaries.minimum)}</span>
+        <span>{preview.action?.apiName || preview.action?.title || 'Screenshot'}</span>
+      </div>
+    </div>}
+    <div className='mobile-timeline-track'>
+      {actions.map(action => <div key={action.callId} className='mobile-timeline-action' style={{ left: `${(action.startTime - boundaries.minimum) / (boundaries.maximum - boundaries.minimum) * 100}%` }} />)}
+      {preview && <div className='mobile-timeline-cursor' style={{ left: preview.x }} />}
+    </div>
+    <div className='mobile-timeline-labels'>
+      <span>0ms</span>
+      <span>{msToString(boundaries.maximum - boundaries.minimum)}</span>
+    </div>
+  </div>;
+};
+
+function findScreencastFrame(model: TraceModel, time: number): { sha1: string; width: number; height: number } | undefined {
+  let best: { sha1: string; width: number; height: number; timestamp: number } | undefined;
+  for (const page of model.pages) {
+    for (const frame of page.screencastFrames) {
+      if (frame.timestamp > time)
+        break;
+      if (!best || frame.timestamp > best.timestamp)
+        best = frame;
+    }
+  }
+  return best;
+}
 
 const MobileSnapshotPanel: React.FC<{
   action: ActionTraceEventInContext | undefined;
