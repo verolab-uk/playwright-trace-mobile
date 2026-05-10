@@ -171,8 +171,9 @@ export const Timeline: React.FunctionComponent<{
   }, [actions, boundaries, measure, onSelected, ref, sdkLanguage, touchPreview]);
 
   const onPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!touchPreview || event.pointerType === 'mouse')
+    if (!touchPreview)
       return;
+    event.preventDefault();
     activePointerId.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     updateTouchPreview(event.clientX, event.clientY);
@@ -181,12 +182,14 @@ export const Timeline: React.FunctionComponent<{
   const onPointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!touchPreview || activePointerId.current !== event.pointerId)
       return;
+    event.preventDefault();
     updateTouchPreview(event.clientX, event.clientY);
   }, [touchPreview, updateTouchPreview]);
 
   const onPointerUp = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (activePointerId.current !== event.pointerId)
       return;
+    event.preventDefault();
     activePointerId.current = undefined;
     updateTouchPreview(event.clientX, event.clientY);
   }, [updateTouchPreview]);
@@ -203,9 +206,9 @@ export const Timeline: React.FunctionComponent<{
       onPaneDoubleClick={onPaneDoubleClick} />}
     <div ref={ref}
       className='timeline-view'
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
+      onMouseDown={touchPreview ? undefined : onMouseDown}
+      onMouseMove={touchPreview ? undefined : onMouseMove}
+      onMouseLeave={touchPreview ? undefined : onMouseLeave}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}>

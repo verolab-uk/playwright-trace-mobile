@@ -399,9 +399,18 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
           />
         </section>
         <section className='mobile-action-pane'>
-          <div className='mobile-pane-title'>Action</div>
-          <div className='mobile-call-panel'>
-            <CallTab action={activeAction} startTimeOffset={model?.startTime ?? 0} sdkLanguage={sdkLanguage} />
+          <div className='mobile-pane-title'>Snapshot</div>
+          <div className='mobile-snapshot-panel'>
+            <SnapshotTabsView
+              action={activeAction}
+              model={model}
+              sdkLanguage={sdkLanguage}
+              testIdAttributeName={model?.testIdAttributeName || 'data-testid'}
+              isInspecting={isInspecting}
+              setIsInspecting={setIsInspecting}
+              highlightedElement={highlightedElement}
+              setHighlightedElement={elementPicked}
+              playback={playback} />
           </div>
           {!hideTimeline && <Timeline
             model={model}
