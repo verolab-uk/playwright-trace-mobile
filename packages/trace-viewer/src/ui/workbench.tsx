@@ -23,7 +23,7 @@ import { ErrorsTab, useErrorsTabModel } from './errorsTab';
 import { ConsoleTab, useConsoleTabModel } from './consoleTab';
 import type { TraceModel, SourceLocation, ActionTraceEventInContext, SourceModel } from '@isomorphic/trace/traceModel';
 import { NetworkTab, useNetworkTabModel } from './networkTab';
-import { SnapshotTabsView } from './snapshotTab';
+import { SnapshotTabsView, collectSnapshots, extendSnapshot, fetchSnapshotInfo, kDefaultViewport } from './snapshotTab';
 import { SourceTab } from './sourceTab';
 import { TabbedPane } from '@web/components/tabbedPane';
 import type { TabbedPaneTabModel } from '@web/components/tabbedPane';
@@ -35,7 +35,7 @@ import { AnnotationsTab } from './annotationsTab';
 import type { Boundaries } from './geometry';
 import { InspectorTab } from './inspectorTab';
 import { ToolbarButton } from '@web/components/toolbarButton';
-import { useSetting, clsx, usePartitionedState, togglePartition } from '@web/uiUtils';
+import { useSetting, clsx, useMeasure, usePartitionedState, togglePartition } from '@web/uiUtils';
 import { msToString } from '@isomorphic/formatUtils';
 import './workbench.css';
 import { testStatusIcon, testStatusText } from './testUtils';
@@ -400,18 +400,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         </section>
         <section className='mobile-action-pane'>
           <div className='mobile-pane-title'>Snapshot</div>
-          <div className='mobile-snapshot-panel'>
-            <SnapshotTabsView
-              action={activeAction}
-              model={model}
-              sdkLanguage={sdkLanguage}
-              testIdAttributeName={model?.testIdAttributeName || 'data-testid'}
-              isInspecting={isInspecting}
-              setIsInspecting={setIsInspecting}
-              highlightedElement={highlightedElement}
-              setHighlightedElement={elementPicked}
-              playback={playback} />
-          </div>
+          <MobileSnapshotPanel action={activeAction} model={model} />
           {!hideTimeline && <Timeline
             model={model}
             boundaries={boundaries}
@@ -500,6 +489,61 @@ function useMobileWorkbenchLayout(): boolean {
 
   return matches;
 }
+
+
+const MobileSnapshotPanel: React.FC<{
+  action: ActionTraceEventInContext | undefined;
+  model: TraceModel | undefined;
+}> = ({ action, model }) => {
+  const [shouldPopulateCanvasFromScreenshot] = useSetting('shouldPopulateCanvasFromScreenshot', false);
+  const [measure, ref] = useMeasure<HTMLDivElement>();
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const [snapshotInfo, setSnapshotInfo] = React.useState({ viewport: kDefaultViewport, url: '' });
+
+  const snapshotUrls = React.useMemo(() => {
+    const snapshots = collectSnapshots(action);
+    const snapshot = snapshots.action || snapshots.after || snapshots.before;
+    return model && snapshot ? extendSnapshot(model.traceUri, snapshot, shouldPopulateCanvasFromScreenshot) : undefined;
+  }, [action, model, shouldPopulateCanvasFromScreenshot]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const info = await fetchSnapshotInfo(snapshotUrls?.snapshotInfoUrl);
+      if (cancelled)
+        return;
+      setSnapshotInfo(info);
+      if (iframeRef.current)
+        iframeRef.current.src = snapshotUrls?.snapshotUrl || 'about:blank';
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotUrls]);
+
+  const viewport = snapshotInfo.viewport || kDefaultViewport;
+  const scale = Math.min(measure.width / viewport.width, measure.height / viewport.height, 1) || 1;
+  const frameSize = {
+    width: viewport.width * scale,
+    height: viewport.height * scale,
+  };
+  const frameOffset = {
+    x: Math.max(0, (measure.width - frameSize.width) / 2),
+    y: Math.max(0, (measure.height - frameSize.height) / 2),
+  };
+
+  return <div className='mobile-snapshot-panel' ref={ref}>
+    <div className='mobile-snapshot-url'>{snapshotInfo.url || 'about:blank'}</div>
+    <div className='mobile-snapshot-viewport' style={{ width: frameSize.width, height: frameSize.height, transform: `translate(${frameOffset.x}px, ${frameOffset.y}px)` }}>
+      <iframe
+        ref={iframeRef}
+        title='DOM Snapshot'
+        sandbox='allow-same-origin allow-scripts'
+        style={{ width: viewport.width, height: viewport.height, transform: `scale(${scale})` }}
+      />
+    </div>
+  </div>;
+};
 
 const ActionsFilterButton: React.FC<{ counters?: Map<string, number>; hiddenActionsCount: number }> = ({ counters, hiddenActionsCount }) => {
   const [actionsFilter, setActionsFilter] = useSetting<ActionGroup[]>('actionsFilter', []);

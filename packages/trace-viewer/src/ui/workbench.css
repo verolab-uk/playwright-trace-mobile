@@ -119,10 +119,44 @@
 
   .mobile-snapshot-panel {
     flex: auto;
-    display: flex;
+    position: relative;
     min-height: 0;
     overflow: hidden;
     background: var(--vscode-editor-background);
+  }
+
+  .mobile-snapshot-url {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1;
+    height: 20px;
+    padding: 0 7px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 11px;
+    line-height: 20px;
+    color: var(--vscode-editorCodeLens-foreground);
+    background: var(--vscode-sideBar-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+  }
+
+  .mobile-snapshot-viewport {
+    position: absolute;
+    top: 22px;
+    left: 0;
+    overflow: hidden;
+    box-shadow: var(--box-shadow);
+    transform-origin: top left;
+    background: white;
+  }
+
+  .mobile-snapshot-viewport iframe {
+    display: block;
+    border: 0;
+    transform-origin: top left;
   }
 
   .workbench-mobile-landscape .timeline-view-container {
