@@ -72,6 +72,10 @@
     min-height: 0;
   }
 
+  .mobile-workbench-shell.actions-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .mobile-actions-pane,
   .mobile-action-pane {
     display: flex;

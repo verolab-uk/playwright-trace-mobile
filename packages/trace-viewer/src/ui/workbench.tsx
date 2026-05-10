@@ -362,13 +362,14 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
   const [mobileDetailTab, setMobileDetailTab] = React.useState<'snapshot' | 'screenshot'>('snapshot');
   const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
+  const [mobileActionsHidden, setMobileActionsHidden] = React.useState(false);
 
   React.useEffect(() => setMobileTimelineTime(boundaries.minimum), [boundaries.minimum]);
 
   if (isMobileWorkbench) {
     return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
-      <div className='mobile-workbench-shell'>
-        <section className='mobile-actions-pane'>
+      <div className={clsx('mobile-workbench-shell', mobileActionsHidden && 'actions-hidden')}>
+        {!mobileActionsHidden && <section className='mobile-actions-pane'>
           <div className='mobile-pane-title'>Actions</div>
           {status && <div className='workbench-run-status' data-testid='workbench-run-status'>
             <span className={clsx('codicon', testStatusIcon(status))}></span>
@@ -401,9 +402,10 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             isLive={isLive}
             actionFilterText={actionFilterText}
           />
-        </section>
+        </section>}
         <section className='mobile-action-pane'>
           <div className='mobile-pane-tabs'>
+            <button onClick={() => setMobileActionsHidden(!mobileActionsHidden)}>{mobileActionsHidden ? 'Show Actions' : 'Hide Actions'}</button>
             <button className={clsx(mobileDetailTab === 'snapshot' && 'selected')} onClick={() => setMobileDetailTab('snapshot')}>Snapshot</button>
             <button className={clsx(mobileDetailTab === 'screenshot' && 'selected')} onClick={() => setMobileDetailTab('screenshot')}>Screenshot</button>
           </div>
