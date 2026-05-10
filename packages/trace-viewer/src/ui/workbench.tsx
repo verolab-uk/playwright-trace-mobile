@@ -360,6 +360,10 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   };
 
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
+  const [mobileDetailTab, setMobileDetailTab] = React.useState<'snapshot' | 'screenshot'>('snapshot');
+  const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
+
+  React.useEffect(() => setMobileTimelineTime(boundaries.minimum), [boundaries.minimum]);
 
   if (isMobileWorkbench) {
     return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
@@ -399,9 +403,21 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
           />
         </section>
         <section className='mobile-action-pane'>
-          <div className='mobile-pane-title'>Snapshot</div>
-          <MobileSnapshotPanel action={activeAction} model={model} />
-          {!hideTimeline && <MobileTimeline model={model} actions={actions || []} boundaries={boundaries} onSelected={onActionSelected} />}
+          <div className='mobile-pane-tabs'>
+            <button className={clsx(mobileDetailTab === 'snapshot' && 'selected')} onClick={() => setMobileDetailTab('snapshot')}>Snapshot</button>
+            <button className={clsx(mobileDetailTab === 'screenshot' && 'selected')} onClick={() => setMobileDetailTab('screenshot')}>Screenshot</button>
+          </div>
+          {mobileDetailTab === 'snapshot' ?
+            <MobileSnapshotPanel action={activeAction} model={model} /> :
+            <MobileScreenshotPanel model={model} time={mobileTimelineTime} />}
+          {!hideTimeline && <MobileTimeline
+            actions={actions || []}
+            boundaries={boundaries}
+            time={mobileTimelineTime}
+            setTime={setMobileTimelineTime}
+            onSelected={onActionSelected}
+            onScrub={() => setMobileDetailTab('screenshot')}
+          />}
         </section>
       </div>
     </div>;
@@ -481,28 +497,24 @@ function useMobileWorkbenchLayout(): boolean {
 
 
 const MobileTimeline: React.FC<{
-  model: TraceModel | undefined;
   actions: ActionTraceEventInContext[];
   boundaries: Boundaries;
+  time: number;
+  setTime: (time: number) => void;
   onSelected: (action: ActionTraceEventInContext) => void;
-}> = ({ model, actions, boundaries, onSelected }) => {
+  onScrub: () => void;
+}> = ({ actions, boundaries, time, setTime, onSelected, onScrub }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
-  const [time, setTime] = React.useState(boundaries.minimum);
-  const frame = React.useMemo(() => findScreencastFrame(model, time), [model, time]);
-
-  React.useEffect(() => setTime(boundaries.minimum), [boundaries.minimum]);
 
   const selectTime = (value: number) => {
     setTime(value);
+    onScrub();
     const action = actions.findLast(action => action.startTime <= value);
     if (action)
       onSelected(action);
   };
 
   return <div className='mobile-simple-timeline'>
-    <div className='mobile-simple-timeline-tooltip'>
-      {frame ? <img src={model?.createRelativeUrl(`sha1/${frame.sha1}`)} /> : <div className='mobile-simple-timeline-empty'>No screenshot</div>}
-    </div>
     <input
       type='range'
       min={boundaries.minimum}
@@ -538,6 +550,17 @@ function findScreencastFrame(model: TraceModel | undefined, time: number): { sha
   }
   return best || first;
 }
+
+
+const MobileScreenshotPanel: React.FC<{
+  model: TraceModel | undefined;
+  time: number;
+}> = ({ model, time }) => {
+  const frame = React.useMemo(() => findScreencastFrame(model, time), [model, time]);
+  return <div className='mobile-screenshot-panel'>
+    {frame ? <img src={model?.createRelativeUrl(`sha1/${frame.sha1}`)} /> : <div className='mobile-screenshot-empty'>No screenshot</div>}
+  </div>;
+};
 
 const MobileSnapshotPanel: React.FC<{
   action: ActionTraceEventInContext | undefined;
