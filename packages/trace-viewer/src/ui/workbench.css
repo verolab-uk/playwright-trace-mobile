@@ -57,53 +57,117 @@
   line-height: 20px;
 }
 
+
 @media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
-  .workbench-mobile {
-    --mori-mobile-actions-height: min(34vh, 260px);
-    --mori-mobile-properties-height: min(36vh, 300px);
+  .workbench-mobile-landscape {
+    overflow: hidden;
+    background: var(--vscode-sideBar-background);
   }
 
-  .workbench-mobile > .timeline {
-    max-height: 72px;
+  .mobile-workbench-shell {
+    display: grid;
+    grid-template-columns: minmax(190px, 34%) minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .mobile-actions-pane,
+  .mobile-action-pane {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
     overflow: hidden;
   }
 
-  .workbench-mobile > .split-view.vertical > .split-view-main > .split-view.horizontal.sidebar-first {
-    flex-direction: column-reverse;
+  .mobile-actions-pane {
+    border-right: 1px solid var(--vscode-panel-border);
   }
 
-  .workbench-mobile > .split-view.vertical > .split-view-main > .split-view.horizontal.sidebar-first > .split-view-sidebar {
-    flex-basis: var(--mori-mobile-actions-height) !important;
-    border-right: 0;
+  .mobile-pane-title {
+    flex: none;
+    height: 22px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    color: var(--vscode-editorCodeLens-foreground);
+    background: var(--vscode-sideBar-background);
     border-bottom: 1px solid var(--vscode-panel-border);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
   }
 
-  .workbench-mobile > .split-view.vertical > .split-view-sidebar {
-    flex-basis: var(--mori-mobile-properties-height) !important;
+  .workbench-mobile-landscape .workbench-run-status {
+    height: 24px;
+    padding: 2px 6px;
+    font-size: 12px;
   }
 
-  .workbench-mobile .split-view-resizer {
-    display: none;
+  .workbench-mobile-landscape .workbench-action-filter {
+    margin-top: 0;
   }
 
-  .workbench-mobile .tabbed-pane > .toolbar {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-
-  .workbench-mobile .tabbed-pane > .toolbar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .workbench-mobile .tabbed-pane-tab {
-    min-width: 64px;
-    min-height: 34px;
-    padding: 0 10px;
-  }
-
-  .workbench-mobile .workbench-action-filter input[type=search] {
-    min-height: 34px;
+  .workbench-mobile-landscape .workbench-action-filter input[type=search] {
+    min-height: 30px;
+    padding: 3px 8px;
     font-size: 16px;
+  }
+
+  .mobile-call-panel {
+    flex: auto;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--vscode-editor-background);
+  }
+
+  .workbench-mobile-landscape .timeline-view-container {
+    flex: none;
+    border-top: 1px solid var(--vscode-panel-border);
+    border-bottom: 0;
+    background: var(--vscode-sideBar-background);
+  }
+
+  .workbench-mobile-landscape .timeline-view {
+    height: 46px;
+    margin: 0 8px;
+    padding-top: 14px;
+    touch-action: none;
+  }
+
+  .workbench-mobile-landscape .film-strip-lanes {
+    display: none;
+  }
+
+  .workbench-mobile-landscape .film-strip-hover {
+    max-width: min(62vw, 420px);
+  }
+
+  .workbench-mobile-landscape .film-strip-hover img {
+    max-width: min(62vw, 420px);
+    height: auto;
+  }
+
+  .workbench-mobile-landscape .film-strip-hover-title {
+    min-width: 180px;
+    max-width: min(62vw, 420px);
+    line-height: 22px;
+    font-size: 12px;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 700px), (orientation: portrait) and (pointer: coarse) and (max-width: 900px) {
+  .workbench-mobile-landscape {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vh;
+    height: 100vw;
+    transform: rotate(90deg) translateY(-100%);
+    transform-origin: top left;
   }
 }

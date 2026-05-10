@@ -38,7 +38,9 @@ const rowHeight = tileSize.height + frameMargin * 2;
 export const FilmStrip: React.FunctionComponent<{
   boundaries: Boundaries,
   previewPoint?: FilmStripPreviewPoint,
-}> = ({ boundaries, previewPoint }) => {
+  showLanes?: boolean,
+  previewPosition?: 'above' | 'below',
+}> = ({ boundaries, previewPoint, showLanes = true, previewPosition = 'below' }) => {
   const model = useTraceModel();
   const [measure, ref] = useMeasure<HTMLDivElement>();
   const lanesRef = React.useRef<HTMLDivElement>(null);
@@ -63,17 +65,18 @@ export const FilmStrip: React.FunctionComponent<{
   }
 
   return <div className='film-strip' ref={ref}>
-    <div className='film-strip-lanes' ref={lanesRef}>{
+    {showLanes && <div className='film-strip-lanes' ref={lanesRef}>{
       model?.pages.map((page, index) => page.screencastFrames.length ? <FilmStripLane
         boundaries={boundaries}
         page={page}
         width={measure.width}
         key={index}
       /> : null)
-    }</div>
+    }</div>}
     {model && previewPoint?.x !== undefined &&
       <div className='film-strip-hover' style={{
-        top: measure.bottom + 5,
+        top: previewPosition === 'above' ? 0 : measure.bottom + 5,
+        transform: previewPosition === 'above' ? 'translateY(calc(-100% - 8px))' : undefined,
         left: Math.min(previewPoint!.x, measure.width - (previewSize ? previewSize.width : 0) - 10),
       }}>
         {previewImage && previewSize && <div style={{ width: previewSize.width, height: previewSize.height }}>

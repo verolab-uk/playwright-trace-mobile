@@ -361,7 +361,66 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
 
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
 
-  return <div className={clsx('vbox workbench', isMobileWorkbench && 'workbench-mobile')} {...(inert ? { inert: true } : {})}>
+  if (isMobileWorkbench) {
+    return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
+      <div className='mobile-workbench-shell'>
+        <section className='mobile-actions-pane'>
+          <div className='mobile-pane-title'>Actions</div>
+          {status && <div className='workbench-run-status' data-testid='workbench-run-status'>
+            <span className={clsx('codicon', testStatusIcon(status))}></span>
+            <div>{testStatusText(status)}</div>
+            <div className='spacer'></div>
+            <div className='workbench-run-duration'>{time ? msToString(time) : ''}</div>
+          </div>}
+          <div className='workbench-action-filter'>
+            <input
+              type='search'
+              placeholder='Filter'
+              aria-label='Filter actions'
+              spellCheck={false}
+              value={actionFilterText}
+              onChange={e => setActionFilterText(e.target.value)}
+            />
+          </div>
+          <ActionList
+            sdkLanguage={sdkLanguage}
+            actions={actions || []}
+            selectedAction={model ? selectedAction : undefined}
+            selectedTime={selectedTime}
+            setSelectedTime={setSelectedTime}
+            treeState={treeState}
+            setTreeState={setTreeState}
+            onSelected={onActionSelected}
+            onHighlighted={setHighlightedAction}
+            revealActionAttachment={revealActionAttachment}
+            revealConsole={() => selectPropertiesTab('console')}
+            isLive={isLive}
+            actionFilterText={actionFilterText}
+          />
+        </section>
+        <section className='mobile-action-pane'>
+          <div className='mobile-pane-title'>Action</div>
+          <div className='mobile-call-panel'>
+            <CallTab action={activeAction} startTimeOffset={model?.startTime ?? 0} sdkLanguage={sdkLanguage} />
+          </div>
+          {!hideTimeline && <Timeline
+            model={model}
+            boundaries={boundaries}
+            onSelected={onActionSelected}
+            sdkLanguage={sdkLanguage}
+            selectedTime={selectedTime}
+            setSelectedTime={setSelectedTime}
+            scrubber={<PlaybackScrubber playback={playback} />}
+            showFilmStrip={false}
+            touchPreview={true}
+            previewPosition='above'
+          />}
+        </section>
+      </div>
+    </div>;
+  }
+
+  return <div className='vbox workbench' {...(inert ? { inert: true } : {})}>
     {!hideTimeline && <Timeline
       model={model}
       boundaries={boundaries}
