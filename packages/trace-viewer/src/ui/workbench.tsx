@@ -401,7 +401,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         <section className='mobile-action-pane'>
           <div className='mobile-pane-title'>Snapshot</div>
           <MobileSnapshotPanel action={activeAction} model={model} />
-          {!hideTimeline && <MobileTimeline actions={actions || []} boundaries={boundaries} onSelected={onActionSelected} />}
+          {!hideTimeline && <MobileTimeline model={model} actions={actions || []} boundaries={boundaries} onSelected={onActionSelected} />}
         </section>
       </div>
     </div>;
@@ -481,12 +481,14 @@ function useMobileWorkbenchLayout(): boolean {
 
 
 const MobileTimeline: React.FC<{
+  model: TraceModel | undefined;
   actions: ActionTraceEventInContext[];
   boundaries: Boundaries;
   onSelected: (action: ActionTraceEventInContext) => void;
-}> = ({ actions, boundaries, onSelected }) => {
+}> = ({ model, actions, boundaries, onSelected }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
   const [time, setTime] = React.useState(boundaries.minimum);
+  const frame = React.useMemo(() => findScreencastFrame(model, time), [model, time]);
 
   React.useEffect(() => setTime(boundaries.minimum), [boundaries.minimum]);
 
@@ -498,6 +500,9 @@ const MobileTimeline: React.FC<{
   };
 
   return <div className='mobile-simple-timeline'>
+    <div className='mobile-simple-timeline-tooltip'>
+      {frame ? <img src={model?.createRelativeUrl(`sha1/${frame.sha1}`)} /> : <div className='mobile-simple-timeline-empty'>No screenshot</div>}
+    </div>
     <input
       type='range'
       min={boundaries.minimum}
@@ -517,6 +522,19 @@ const MobileTimeline: React.FC<{
     </div>
   </div>;
 };
+
+function findScreencastFrame(model: TraceModel | undefined, time: number): { sha1: string; width: number; height: number; timestamp: number } | undefined {
+  let best: { sha1: string; width: number; height: number; timestamp: number } | undefined;
+  for (const page of model?.pages || []) {
+    for (const frame of page.screencastFrames) {
+      if (frame.timestamp > time)
+        break;
+      if (!best || frame.timestamp > best.timestamp)
+        best = frame;
+    }
+  }
+  return best;
+}
 
 const MobileSnapshotPanel: React.FC<{
   action: ActionTraceEventInContext | undefined;
