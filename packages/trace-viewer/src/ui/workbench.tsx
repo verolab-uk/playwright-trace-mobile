@@ -79,6 +79,8 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const [selectedPropertiesTab, setSelectedPropertiesTab] = useSetting<string>('propertiesTab', showSourcesFirst ? 'source' : 'call');
   const [sidebarLocation, setSidebarLocation] = useSetting<'bottom' | 'right'>('propertiesSidebarLocation', 'bottom');
   const [actionsFilter] = useSetting<ActionGroup[]>('actionsFilter', []);
+  const isMobileWorkbench = useMobileWorkbenchLayout();
+  const effectiveSidebarLocation = isMobileWorkbench ? 'bottom' : sidebarLocation;
 
   // Per-model settings, should be primitive non-retaining types.
   // These will be turned into per-model state in the following patches.
@@ -251,7 +253,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
       stack={revealedStack}
       sources={sources}
       rootDir={rootDir}
-      stackFrameLocation={sidebarLocation === 'bottom' ? 'right' : 'bottom'}
+      stackFrameLocation={effectiveSidebarLocation === 'bottom' ? 'right' : 'bottom'}
       fallbackLocation={fallbackLocation}
       onOpenExternally={onOpenExternally}
     />
@@ -359,7 +361,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
 
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
 
-  return <div className='vbox workbench' {...(inert ? { inert: true } : {})}>
+  return <div className={clsx('vbox workbench', isMobileWorkbench && 'workbench-mobile')} {...(inert ? { inert: true } : {})}>
     {!hideTimeline && <Timeline
       model={model}
       boundaries={boundaries}
@@ -371,7 +373,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     />}
     <SplitView
       sidebarSize={250}
-      orientation={sidebarLocation === 'bottom' ? 'vertical' : 'horizontal'} settingName='propertiesSidebar'
+      orientation={effectiveSidebarLocation === 'bottom' ? 'vertical' : 'horizontal'} settingName='propertiesSidebar'
       main={<SplitView
         sidebarSize={250}
         orientation='horizontal'
@@ -400,8 +402,8 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         tabs={tabs}
         selectedTab={selectedPropertiesTab}
         setSelectedTab={selectPropertiesTab}
-        rightToolbar={[
-          sidebarLocation === 'bottom' ?
+        rightToolbar={isMobileWorkbench ? [] : [
+          effectiveSidebarLocation === 'bottom' ?
             <ToolbarButton title='Dock to right' icon='layout-sidebar-right-off' onClick={() => {
               setSidebarLocation('right');
             }} /> :
@@ -409,11 +411,27 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
               setSidebarLocation('bottom');
             }} />
         ]}
-        mode={sidebarLocation === 'bottom' ? 'default' : 'select'}
+        mode={effectiveSidebarLocation === 'bottom' ? 'default' : 'select'}
       />}
     />
   </div>;
 };
+
+
+function useMobileWorkbenchLayout(): boolean {
+  const query = '(max-width: 700px), (pointer: coarse) and (max-width: 900px)';
+  const [matches, setMatches] = React.useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+
+  React.useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return matches;
+}
 
 const ActionsFilterButton: React.FC<{ counters?: Map<string, number>; hiddenActionsCount: number }> = ({ counters, hiddenActionsCount }) => {
   const [actionsFilter, setActionsFilter] = useSetting<ActionGroup[]>('actionsFilter', []);

@@ -56,3 +56,54 @@
   padding: 4px 8px;
   line-height: 20px;
 }
+
+@media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
+  .workbench-mobile {
+    --mori-mobile-actions-height: min(34vh, 260px);
+    --mori-mobile-properties-height: min(36vh, 300px);
+  }
+
+  .workbench-mobile > .timeline {
+    max-height: 72px;
+    overflow: hidden;
+  }
+
+  .workbench-mobile > .split-view.vertical > .split-view-main > .split-view.horizontal.sidebar-first {
+    flex-direction: column-reverse;
+  }
+
+  .workbench-mobile > .split-view.vertical > .split-view-main > .split-view.horizontal.sidebar-first > .split-view-sidebar {
+    flex-basis: var(--mori-mobile-actions-height) !important;
+    border-right: 0;
+    border-bottom: 1px solid var(--vscode-panel-border);
+  }
+
+  .workbench-mobile > .split-view.vertical > .split-view-sidebar {
+    flex-basis: var(--mori-mobile-properties-height) !important;
+  }
+
+  .workbench-mobile .split-view-resizer {
+    display: none;
+  }
+
+  .workbench-mobile .tabbed-pane > .toolbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .workbench-mobile .tabbed-pane > .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workbench-mobile .tabbed-pane-tab {
+    min-width: 64px;
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  .workbench-mobile .workbench-action-filter input[type=search] {
+    min-height: 34px;
+    font-size: 16px;
+  }
+}
