@@ -364,7 +364,11 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
   const [mobileActionsHidden, setMobileActionsHidden] = React.useState(false);
 
-  React.useEffect(() => setMobileTimelineTime(boundaries.minimum), [boundaries.minimum]);
+  React.useEffect(() => setMobileTimelineTime(activeAction?.startTime ?? boundaries.minimum), [activeAction, boundaries.minimum]);
+  const onMobileActionSelected = React.useCallback((action: ActionTraceEventInContext) => {
+    setMobileTimelineTime(action.startTime);
+    onActionSelected(action);
+  }, [onActionSelected]);
 
   if (isMobileWorkbench) {
     return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
@@ -395,7 +399,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             setSelectedTime={setSelectedTime}
             treeState={treeState}
             setTreeState={setTreeState}
-            onSelected={onActionSelected}
+            onSelected={onMobileActionSelected}
             onHighlighted={setHighlightedAction}
             revealActionAttachment={revealActionAttachment}
             revealConsole={() => selectPropertiesTab('console')}
@@ -538,19 +542,14 @@ const MobileTimeline: React.FC<{
 };
 
 function findScreencastFrame(model: TraceModel | undefined, time: number): { sha1: string; width: number; height: number; timestamp: number } | undefined {
-  let best: { sha1: string; width: number; height: number; timestamp: number } | undefined;
-  let first: { sha1: string; width: number; height: number; timestamp: number } | undefined;
+  let closest: { sha1: string; width: number; height: number; timestamp: number } | undefined;
   for (const page of model?.pages || []) {
     for (const frame of page.screencastFrames) {
-      if (!first || frame.timestamp < first.timestamp)
-        first = frame;
-      if (frame.timestamp > time)
-        break;
-      if (!best || frame.timestamp > best.timestamp)
-        best = frame;
+      if (!closest || Math.abs(frame.timestamp - time) < Math.abs(closest.timestamp - time))
+        closest = frame;
     }
   }
-  return best || first;
+  return closest;
 }
 
 
