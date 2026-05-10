@@ -57,7 +57,6 @@
   line-height: 20px;
 }
 
-
 @media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
   .workbench-mobile-landscape {
     overflow: hidden;
@@ -203,5 +202,27 @@
     height: 100vw;
     transform: rotate(90deg) translateY(-100%);
     transform-origin: top left;
+  }
+}
+
+@media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
+  .mobile-simple-timeline {
+    flex: none;
+    padding: 8px 10px 6px;
+    border-top: 1px solid var(--vscode-panel-border);
+    background: var(--vscode-sideBar-background);
+  }
+
+  .mobile-simple-timeline input[type=range] {
+    width: 100%;
+    margin: 0;
+  }
+
+  .mobile-simple-timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    color: var(--vscode-editorCodeLens-foreground);
+    font-size: 10px;
   }
 }

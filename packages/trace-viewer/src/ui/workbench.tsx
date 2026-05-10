@@ -401,6 +401,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         <section className='mobile-action-pane'>
           <div className='mobile-pane-title'>Snapshot</div>
           <MobileSnapshotPanel action={activeAction} model={model} />
+          {!hideTimeline && <MobileTimeline actions={actions || []} boundaries={boundaries} onSelected={onActionSelected} />}
         </section>
       </div>
     </div>;
@@ -478,6 +479,44 @@ function useMobileWorkbenchLayout(): boolean {
   return matches;
 }
 
+
+const MobileTimeline: React.FC<{
+  actions: ActionTraceEventInContext[];
+  boundaries: Boundaries;
+  onSelected: (action: ActionTraceEventInContext) => void;
+}> = ({ actions, boundaries, onSelected }) => {
+  const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
+  const [time, setTime] = React.useState(boundaries.minimum);
+
+  React.useEffect(() => setTime(boundaries.minimum), [boundaries.minimum]);
+
+  const selectTime = (value: number) => {
+    setTime(value);
+    const action = actions.findLast(action => action.startTime <= value);
+    if (action)
+      onSelected(action);
+  };
+
+  return <div className='mobile-simple-timeline'>
+    <input
+      type='range'
+      min={boundaries.minimum}
+      max={boundaries.maximum}
+      step={1}
+      value={time}
+      onChange={event => selectTime(Number(event.currentTarget.value))}
+      onPointerMove={event => {
+        if (event.buttons)
+          selectTime(Number(event.currentTarget.value));
+      }}
+      aria-label='Trace timeline'
+    />
+    <div className='mobile-simple-timeline-labels'>
+      <span>{msToString(time - boundaries.minimum)}</span>
+      <span>{msToString(duration)}</span>
+    </div>
+  </div>;
+};
 
 const MobileSnapshotPanel: React.FC<{
   action: ActionTraceEventInContext | undefined;
