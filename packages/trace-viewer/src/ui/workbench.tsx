@@ -525,15 +525,18 @@ const MobileTimeline: React.FC<{
 
 function findScreencastFrame(model: TraceModel | undefined, time: number): { sha1: string; width: number; height: number; timestamp: number } | undefined {
   let best: { sha1: string; width: number; height: number; timestamp: number } | undefined;
+  let first: { sha1: string; width: number; height: number; timestamp: number } | undefined;
   for (const page of model?.pages || []) {
     for (const frame of page.screencastFrames) {
+      if (!first || frame.timestamp < first.timestamp)
+        first = frame;
       if (frame.timestamp > time)
         break;
       if (!best || frame.timestamp > best.timestamp)
         best = frame;
     }
   }
-  return best;
+  return best || first;
 }
 
 const MobileSnapshotPanel: React.FC<{
