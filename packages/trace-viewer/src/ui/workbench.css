@@ -226,49 +226,22 @@
 
 @media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
   .mobile-simple-timeline {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 2;
-    height: 18px;
-    padding: 0;
-    background: transparent;
-    pointer-events: auto;
-    transition: height 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
-  }
-
-  .mobile-simple-timeline.expanded {
-    height: 34px;
-    background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, transparent);
-    box-shadow: 0 -1px 8px rgb(0 0 0 / 28%);
-  }
-
-  .mobile-simple-timeline-progress {
-    position: absolute;
-    right: auto;
-    bottom: 0;
-    left: 0;
-    height: 3px;
-    max-width: 100%;
-    background: var(--vscode-progressBar-background);
-    opacity: .75;
+    flex: none;
+    padding: 6px 10px 6px;
+    border-top: 1px solid var(--vscode-panel-border);
+    background: var(--vscode-sideBar-background);
   }
 
   .mobile-simple-timeline input[type=range] {
-    position: absolute;
-    right: 8px;
-    bottom: 5px;
-    left: 8px;
-    width: calc(100% - 16px);
-    height: 24px;
+    width: 100%;
     margin: 0;
-    opacity: 0;
-    transition: opacity 120ms ease;
   }
 
-  .mobile-simple-timeline.expanded input[type=range],
-  .mobile-simple-timeline:focus-within input[type=range] {
-    opacity: 1;
+  .mobile-simple-timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    color: var(--vscode-editorCodeLens-foreground);
+    font-size: 10px;
   }
 }

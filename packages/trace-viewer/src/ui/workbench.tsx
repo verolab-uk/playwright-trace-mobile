@@ -362,7 +362,6 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
   const [mobileDetailTab, setMobileDetailTab] = React.useState<'snapshot' | 'screenshot'>('snapshot');
   const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
-  const [mobileTimelineRevealSignal, setMobileTimelineRevealSignal] = React.useState(0);
   const [mobileActionsHidden, setMobileActionsHidden] = React.useState(false);
 
   React.useEffect(() => setMobileTimelineTime(activeAction?.startTime ?? boundaries.minimum), [activeAction, boundaries.minimum]);
@@ -390,8 +389,6 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
               spellCheck={false}
               value={actionFilterText}
               onChange={e => setActionFilterText(e.target.value)}
-              onFocus={() => setMobileTimelineRevealSignal(signal => signal + 1)}
-              onPointerDown={() => setMobileTimelineRevealSignal(signal => signal + 1)}
             />
           </div>
           <ActionList
@@ -418,16 +415,16 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
           </div>
           {mobileDetailTab === 'snapshot' ?
             <MobileSnapshotPanel action={activeAction} model={model} /> :
-            <MobileScreenshotPanel model={model} time={mobileTimelineTime} />}
-          {!hideTimeline && <MobileTimeline
-            actions={actions || []}
-            boundaries={boundaries}
-            time={mobileTimelineTime}
-            setTime={setMobileTimelineTime}
-            revealSignal={mobileTimelineRevealSignal}
-            onSelected={onActionSelected}
-            onScrub={() => setMobileDetailTab('screenshot')}
-          />}
+            <>
+              <MobileScreenshotPanel model={model} time={mobileTimelineTime} />
+              {!hideTimeline && <MobileTimeline
+                actions={actions || []}
+                boundaries={boundaries}
+                time={mobileTimelineTime}
+                setTime={setMobileTimelineTime}
+                onSelected={onActionSelected}
+              />}
+            </>}
         </section>
       </div>
     </div>;
@@ -511,50 +508,18 @@ const MobileTimeline: React.FC<{
   boundaries: Boundaries;
   time: number;
   setTime: (time: number) => void;
-  revealSignal: number;
   onSelected: (action: ActionTraceEventInContext) => void;
-  onScrub: () => void;
-}> = ({ actions, boundaries, time, setTime, revealSignal, onSelected, onScrub }) => {
+}> = ({ actions, boundaries, time, setTime, onSelected }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
-  const [expanded, setExpanded] = React.useState(false);
-  const collapseTimer = React.useRef<number | undefined>();
-
-  const scheduleCollapse = React.useCallback(() => {
-    window.clearTimeout(collapseTimer.current);
-    collapseTimer.current = window.setTimeout(() => setExpanded(false), 1400);
-  }, []);
-
-  React.useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
-
-  React.useEffect(() => {
-    if (!revealSignal)
-      return;
-    setExpanded(true);
-    scheduleCollapse();
-  }, [revealSignal, scheduleCollapse]);
 
   const selectTime = (value: number) => {
     setTime(value);
-    onScrub();
-    setExpanded(true);
-    scheduleCollapse();
     const action = actions.findLast(action => action.startTime <= value);
     if (action)
       onSelected(action);
   };
 
-  return <div
-    className={clsx('mobile-simple-timeline', expanded && 'expanded')}
-    onPointerDown={() => {
-      setExpanded(true);
-      window.clearTimeout(collapseTimer.current);
-    }}
-    onPointerUp={scheduleCollapse}
-    onPointerCancel={scheduleCollapse}
-    onFocus={() => setExpanded(true)}
-    onBlur={scheduleCollapse}
-  >
-    <div className='mobile-simple-timeline-progress' style={{ width: `${((time - boundaries.minimum) / duration) * 100}%` }} />
+  return <div className='mobile-simple-timeline'>
     <input
       type='range'
       min={boundaries.minimum}
@@ -568,6 +533,10 @@ const MobileTimeline: React.FC<{
       }}
       aria-label='Trace timeline'
     />
+    <div className='mobile-simple-timeline-labels'>
+      <span>{msToString(time - boundaries.minimum)}</span>
+      <span>{msToString(duration)}</span>
+    </div>
   </div>;
 };
 
