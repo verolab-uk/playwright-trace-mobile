@@ -80,6 +80,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const [sidebarLocation, setSidebarLocation] = useSetting<'bottom' | 'right'>('propertiesSidebarLocation', 'bottom');
   const [actionsFilter] = useSetting<ActionGroup[]>('actionsFilter', []);
   const isMobileWorkbench = useMobileWorkbenchLayout();
+  const mobileViewportStyle = useMobileVisualViewportStyle(isMobileWorkbench);
   const effectiveSidebarLocation = isMobileWorkbench ? 'bottom' : sidebarLocation;
 
   // Per-model settings, should be primitive non-retaining types.
@@ -371,7 +372,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   }, [onActionSelected]);
 
   if (isMobileWorkbench) {
-    return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
+    return <div className='vbox workbench workbench-mobile-landscape' style={mobileViewportStyle} {...(inert ? { inert: true } : {})}>
       <div className={clsx('mobile-workbench-shell', mobileActionsHidden && 'actions-hidden')}>
         {!mobileActionsHidden && <section className='mobile-actions-pane'>
           <div className='mobile-pane-title'>Actions</div>
@@ -503,6 +504,44 @@ function useMobileWorkbenchLayout(): boolean {
   }, []);
 
   return matches;
+}
+
+function useMobileVisualViewportStyle(enabled: boolean): React.CSSProperties | undefined {
+  const [viewport, setViewport] = React.useState(() => visualViewportSize());
+
+  React.useEffect(() => {
+    if (!enabled)
+      return;
+    const update = () => setViewport(visualViewportSize());
+    update();
+    window.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('scroll', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('scroll', update);
+    };
+  }, [enabled]);
+
+  if (!enabled)
+    return undefined;
+  return {
+    '--mobile-visual-viewport-width': `${viewport.width}px`,
+    '--mobile-visual-viewport-height': `${viewport.height}px`,
+    '--mobile-visual-viewport-offset-left': `${viewport.offsetLeft}px`,
+    '--mobile-visual-viewport-offset-top': `${viewport.offsetTop}px`,
+  } as React.CSSProperties;
+}
+
+function visualViewportSize() {
+  const visualViewport = typeof window !== 'undefined' ? window.visualViewport : undefined;
+  return {
+    width: visualViewport?.width ?? window.innerWidth,
+    height: visualViewport?.height ?? window.innerHeight,
+    offsetLeft: visualViewport?.offsetLeft ?? 0,
+    offsetTop: visualViewport?.offsetTop ?? 0,
+  };
 }
 
 

@@ -67,6 +67,8 @@
   }
 
   .workbench-mobile-landscape {
+    width: var(--mobile-visual-viewport-width, 100dvw);
+    height: var(--mobile-visual-viewport-height, 100dvh);
     overflow: hidden;
     background: var(--vscode-sideBar-background);
   }
@@ -235,10 +237,10 @@
 @media (orientation: portrait) and (max-width: 700px), (orientation: portrait) and (pointer: coarse) and (max-width: 900px) {
   .workbench-mobile-landscape {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vh;
-    height: 100vw;
+    top: var(--mobile-visual-viewport-offset-top, 0);
+    left: var(--mobile-visual-viewport-offset-left, 0);
+    width: var(--mobile-visual-viewport-height, 100dvh);
+    height: var(--mobile-visual-viewport-width, 100dvw);
     transform: rotate(90deg) translateY(-100%);
     transform-origin: top left;
   }

@@ -98,6 +98,20 @@ test('should show empty trace viewer', async ({ showTraceViewer }, testInfo) => 
   await expect(traceViewer.page).toHaveTitle('Playwright Trace Viewer');
 });
 
+test('mobile workbench fits the visual viewport in portrait', async ({ showTraceViewer }) => {
+  const traceViewer = await showTraceViewer(traceFile);
+  await traceViewer.page.setViewportSize({ width: 390, height: 844 });
+
+  const mobileWorkbench = traceViewer.page.locator('.workbench-mobile-landscape');
+  await expect(mobileWorkbench).toBeVisible();
+  await expect(traceViewer.page.locator('.mobile-pane-tabs')).toBeVisible();
+
+  await expect.poll(async () => {
+    const box = await mobileWorkbench.boundingBox();
+    return box && { width: Math.round(box.width), height: Math.round(box.height) };
+  }).toEqual({ width: 390, height: 844 });
+});
+
 test('should open two trace viewers', async ({ showTraceViewer }, testInfo) => {
   const port = testInfo.workerIndex + 13321;
   const traceViewer1 = await showTraceViewer(testInfo.outputPath(), { host: 'localhost', port });
