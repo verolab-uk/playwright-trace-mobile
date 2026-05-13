@@ -23,7 +23,7 @@ import { ErrorsTab, useErrorsTabModel } from './errorsTab';
 import { ConsoleTab, useConsoleTabModel } from './consoleTab';
 import type { TraceModel, SourceLocation, ActionTraceEventInContext, SourceModel } from '@isomorphic/trace/traceModel';
 import { NetworkTab, useNetworkTabModel } from './networkTab';
-import { SnapshotTabsView, collectSnapshots, extendSnapshot, fetchSnapshotInfo, kDefaultViewport } from './snapshotTab';
+import { SnapshotTabsView, collectSnapshots, extendSnapshot } from './snapshotTab';
 import { SourceTab } from './sourceTab';
 import { TabbedPane } from '@web/components/tabbedPane';
 import type { TabbedPaneTabModel } from '@web/components/tabbedPane';
@@ -35,7 +35,7 @@ import { AnnotationsTab } from './annotationsTab';
 import type { Boundaries } from './geometry';
 import { InspectorTab } from './inspectorTab';
 import { ToolbarButton } from '@web/components/toolbarButton';
-import { useSetting, clsx, useMeasure, usePartitionedState, togglePartition } from '@web/uiUtils';
+import { useSetting, clsx, usePartitionedState, togglePartition } from '@web/uiUtils';
 import { msToString } from '@isomorphic/formatUtils';
 import './workbench.css';
 import { testStatusIcon, testStatusText } from './testUtils';
@@ -568,46 +568,18 @@ const MobileSnapshotPanel: React.FC<{
   model: TraceModel | undefined;
 }> = ({ action, model }) => {
   const [shouldPopulateCanvasFromScreenshot] = useSetting('shouldPopulateCanvasFromScreenshot', false);
-  const [measure, ref] = useMeasure<HTMLDivElement>();
-  const iframeRef = React.useRef<HTMLIFrameElement>(null);
-  const [snapshotInfo, setSnapshotInfo] = React.useState({ viewport: kDefaultViewport, url: '' });
-
-  const snapshotUrls = React.useMemo(() => {
+  const snapshotUrl = React.useMemo(() => {
     const snapshots = collectSnapshots(action);
     const snapshot = snapshots.action || snapshots.after || snapshots.before;
-    return model && snapshot ? extendSnapshot(model.traceUri, snapshot, shouldPopulateCanvasFromScreenshot) : undefined;
+    return model && snapshot ? extendSnapshot(model.traceUri, snapshot, shouldPopulateCanvasFromScreenshot).snapshotUrl : undefined;
   }, [action, model, shouldPopulateCanvasFromScreenshot]);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const info = await fetchSnapshotInfo(snapshotUrls?.snapshotInfoUrl);
-      if (cancelled)
-        return;
-      setSnapshotInfo(info);
-      if (iframeRef.current)
-        iframeRef.current.src = snapshotUrls?.snapshotUrl || 'about:blank';
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [snapshotUrls]);
-
-  const viewport = snapshotInfo.viewport || kDefaultViewport;
-  const scale = Math.min(measure.width / viewport.width, measure.height / viewport.height, 1) || 1;
-  const frameSize = {
-    width: viewport.width * scale,
-    height: viewport.height * scale,
-  };
-  return <div className='mobile-snapshot-panel' ref={ref}>
-    <div className='mobile-snapshot-viewport' style={{ width: frameSize.width, height: frameSize.height }}>
-      <iframe
-        ref={iframeRef}
-        title='DOM Snapshot'
-        sandbox='allow-same-origin allow-scripts'
-        style={{ width: viewport.width, height: viewport.height, transform: `scale(${scale})` }}
-      />
-    </div>
+  return <div className='mobile-snapshot-panel'>
+    <iframe
+      src={snapshotUrl || 'about:blank'}
+      title='DOM Snapshot'
+      sandbox='allow-same-origin allow-scripts'
+    />
   </div>;
 };
 
