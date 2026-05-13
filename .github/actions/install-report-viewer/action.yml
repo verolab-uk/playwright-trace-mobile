@@ -9,7 +9,7 @@ inputs:
   runtime-url:
     description: URL for the published trace-viewer.tar.gz runtime.
     required: false
-    default: https://playwright-trace-mobile.pages.dev/trace-viewer.tar.gz
+    default: https://raw.githubusercontent.com/verolab-uk/playwright-trace-mobile-runtime/main/trace-viewer.tar.gz
 
 runs:
   using: composite

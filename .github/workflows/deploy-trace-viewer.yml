@@ -61,10 +61,25 @@ jobs:
           path: public
           if-no-files-found: error
 
-      - name: Deploy to Cloudflare Pages
-        if: ${{ vars.CLOUDFLARE_PAGES_PROJECT != '' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main
+      - name: Publish public runtime repository
+        env:
+          RUNTIME_DEPLOY_TOKEN: ${{ secrets.RUNTIME_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RUNTIME_DEPLOY_TOKEN}" ]]; then
+            echo "RUNTIME_DEPLOY_TOKEN is required to publish verolab-uk/playwright-trace-mobile-runtime" >&2
+            exit 1
+          fi
+          git clone "https://x-access-token:${RUNTIME_DEPLOY_TOKEN}@github.com/verolab-uk/playwright-trace-mobile-runtime.git" "$RUNNER_TEMP/playwright-trace-mobile-runtime"
+          rm -rf "$RUNNER_TEMP/playwright-trace-mobile-runtime"/*
+          cp -R public/. "$RUNNER_TEMP/playwright-trace-mobile-runtime/"
+          cd "$RUNNER_TEMP/playwright-trace-mobile-runtime"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "Runtime repository already up to date."
+            exit 0
+          fi
+          git commit -m "Publish trace viewer runtime ${GITHUB_SHA}"
+          git push origin main
