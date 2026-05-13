@@ -370,25 +370,60 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     onActionSelected(action);
   }, [onActionSelected]);
   const mobileSwipeStart = React.useRef<{ x: number, y: number } | undefined>();
-  const onMobileSwipeStart = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-    mobileSwipeStart.current = { x: event.clientX, y: event.clientY };
-  }, []);
-  const onMobileSwipeEnd = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+  const applyMobileSwipe = React.useCallback((x: number, y: number, finish: boolean) => {
     const start = mobileSwipeStart.current;
-    mobileSwipeStart.current = undefined;
     if (!start)
       return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    if (Math.abs(dx) < 48 || Math.abs(dy) > 36)
+    const dx = x - start.x;
+    const dy = y - start.y;
+    if (Math.abs(dx) >= 36 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      setMobileActionsHidden(dx < 0);
+      mobileSwipeStart.current = undefined;
       return;
-    setMobileActionsHidden(dx < 0);
+    }
+    if (finish)
+      mobileSwipeStart.current = undefined;
   }, []);
+  const onMobileSwipePointerStart = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+    mobileSwipeStart.current = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, []);
+  const onMobileSwipePointerMove = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+    applyMobileSwipe(event.clientX, event.clientY, false);
+  }, [applyMobileSwipe]);
+  const onMobileSwipePointerEnd = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+    applyMobileSwipe(event.clientX, event.clientY, true);
+  }, [applyMobileSwipe]);
+  const onMobileSwipeTouchStart = React.useCallback((event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.changedTouches[0];
+    if (touch)
+      mobileSwipeStart.current = { x: touch.clientX, y: touch.clientY };
+  }, []);
+  const onMobileSwipeTouchMove = React.useCallback((event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.changedTouches[0];
+    if (touch)
+      applyMobileSwipe(touch.clientX, touch.clientY, false);
+  }, [applyMobileSwipe]);
+  const onMobileSwipeTouchEnd = React.useCallback((event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.changedTouches[0];
+    if (touch)
+      applyMobileSwipe(touch.clientX, touch.clientY, true);
+  }, [applyMobileSwipe]);
+  const mobileSwipeHandlers = {
+    onPointerDown: onMobileSwipePointerStart,
+    onPointerMove: onMobileSwipePointerMove,
+    onPointerUp: onMobileSwipePointerEnd,
+    onPointerCancel: () => mobileSwipeStart.current = undefined,
+    onTouchStart: onMobileSwipeTouchStart,
+    onTouchMove: onMobileSwipeTouchMove,
+    onTouchEnd: onMobileSwipeTouchEnd,
+    onTouchCancel: () => mobileSwipeStart.current = undefined,
+  };
 
   if (isMobileWorkbench) {
     return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
       <div className={clsx('mobile-workbench-shell', mobileActionsHidden && 'actions-hidden')}>
-        {!mobileActionsHidden && <section className='mobile-actions-pane' onPointerDown={onMobileSwipeStart} onPointerUp={onMobileSwipeEnd} onPointerCancel={() => mobileSwipeStart.current = undefined}>
+        {!mobileActionsHidden && <section className='mobile-actions-pane' {...mobileSwipeHandlers}>
           <div className='mobile-pane-title'>Actions</div>
           {status && <div className='workbench-run-status' data-testid='workbench-run-status'>
             <span className={clsx('codicon', testStatusIcon(status))}></span>
@@ -423,7 +458,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
           />
         </section>}
         <section className='mobile-action-pane'>
-          {mobileActionsHidden && <div className='mobile-actions-swipe-edge' onPointerDown={onMobileSwipeStart} onPointerUp={onMobileSwipeEnd} onPointerCancel={() => mobileSwipeStart.current = undefined} aria-hidden='true' />}
+          {mobileActionsHidden && <div className='mobile-actions-swipe-edge' {...mobileSwipeHandlers} aria-hidden='true' />}
           <div className='mobile-pane-tabs'>
             <button onClick={() => setMobileActionsHidden(!mobileActionsHidden)}>{mobileActionsHidden ? 'Show Actions' : 'Hide Actions'}</button>
             <button className={clsx(mobileDetailTab === 'snapshot' && 'selected')} onClick={() => setMobileDetailTab('snapshot')}>Snapshot</button>

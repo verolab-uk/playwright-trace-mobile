@@ -93,11 +93,11 @@
 
   .mobile-actions-swipe-edge {
     position: absolute;
-    top: 22px;
+    top: 0;
     bottom: 0;
     left: 0;
-    z-index: 3;
-    width: 28px;
+    z-index: 10;
+    width: 56px;
     touch-action: pan-y;
   }
 
