@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: deploy-trace-viewer-runtime
@@ -49,31 +49,22 @@ jobs:
       - name: Package runtime
         run: |
           set -euo pipefail
+          mkdir -p public
           cd packages/playwright-core/lib/vite/traceViewer
-          tar -czf "$GITHUB_WORKSPACE/trace-viewer.tar.gz" .
+          tar -czf "$GITHUB_WORKSPACE/public/trace-viewer.tar.gz" .
+          cp -R . "$GITHUB_WORKSPACE/public/viewer"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: trace-viewer-runtime
-          path: trace-viewer.tar.gz
+          path: public
           if-no-files-found: error
 
-      - name: Publish latest release asset
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: trace-viewer-latest
-        run: |
-          set -euo pipefail
-          git tag -f "$TAG" "$GITHUB_SHA"
-          git push -f origin "refs/tags/$TAG"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" \
-              --title 'Latest trace viewer runtime' \
-              --notes "Built from ${GITHUB_SHA}."
-          else
-            gh release create "$TAG" \
-              --title 'Latest trace viewer runtime' \
-              --notes "Built from ${GITHUB_SHA}."
-          fi
-          gh release upload "$TAG" trace-viewer.tar.gz --clobber
+      - name: Deploy to Cloudflare Pages
+        if: ${{ vars.CLOUDFLARE_PAGES_PROJECT != '' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main

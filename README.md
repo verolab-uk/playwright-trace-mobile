@@ -10,7 +10,7 @@ Private Verolab fork for a mobile-focused Playwright trace viewer.
 
 ## Runtime Deployment
 
-This repository publishes one reusable mobile trace viewer runtime. The CD workflow builds `packages/trace-viewer`, packages `packages/playwright-core/lib/vite/traceViewer`, and uploads it to the mutable GitHub Release tag `trace-viewer-latest` as `trace-viewer.tar.gz`.
+This repository publishes one reusable mobile trace viewer runtime. The CD workflow builds `packages/trace-viewer`, packages `packages/playwright-core/lib/vite/traceViewer`, and publishes `trace-viewer.tar.gz` to Cloudflare Pages at `https://playwright-trace-mobile.pages.dev/trace-viewer.tar.gz`.
 
 Other repositories should not build this viewer. After `npx playwright test` creates `playwright-report`, use the shared action to replace the report-local trace viewer runtime:
 
@@ -18,10 +18,9 @@ Other repositories should not build this viewer. After `npx playwright test` cre
 - uses: verolab-uk/playwright-trace-mobile/.github/actions/install-report-viewer@main
   with:
     report-dir: playwright-report
-    token: ${{ secrets.TRACE_VIEWER_RELEASE_TOKEN }}
 ```
 
-The resulting Playwright report keeps its original `trace/index.html?trace=...` links, but those links open this mobile viewer. The deployed runtime lives in the `trace-viewer-latest` GitHub Release in this repository.
+The resulting Playwright report keeps its original `trace/index.html?trace=...` links, but those links open this mobile viewer. Downstream repositories do not need GitHub tokens; they download the public runtime tarball.
 
 ## Upstream README
 

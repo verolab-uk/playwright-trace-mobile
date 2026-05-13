@@ -1,44 +1,27 @@
 name: Install mobile trace viewer into Playwright report
-description: Replace a Playwright HTML report trace viewer runtime with the released mobile trace viewer runtime.
+description: Replace a Playwright HTML report trace viewer runtime with the published mobile trace viewer runtime.
 
 inputs:
   report-dir:
     description: Path to the generated Playwright HTML report directory.
     required: false
     default: playwright-report
-  repository:
-    description: Repository that publishes the trace viewer runtime release.
+  runtime-url:
+    description: URL for the published trace-viewer.tar.gz runtime.
     required: false
-    default: verolab-uk/playwright-trace-mobile
-  tag:
-    description: Release tag that contains trace-viewer.tar.gz.
-    required: false
-    default: trace-viewer-latest
-  token:
-    description: GitHub token that can read the runtime release when the repository is private.
-    required: false
-    default: ''
+    default: https://playwright-trace-mobile.pages.dev/trace-viewer.tar.gz
 
 runs:
   using: composite
   steps:
-    - name: Download released runtime
+    - name: Download published runtime
       shell: bash
       env:
-        REPOSITORY: ${{ inputs.repository }}
-        TAG: ${{ inputs.tag }}
-        TOKEN: ${{ inputs.token }}
+        RUNTIME_URL: ${{ inputs.runtime-url }}
       run: |
         set -euo pipefail
         mkdir -p "$RUNNER_TEMP/trace-viewer-runtime"
-        url="https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG}"
-        auth_args=()
-        if [[ -n "$TOKEN" ]]; then
-          auth_args=(-H "Authorization: Bearer ${TOKEN}")
-        fi
-        asset_url=$(curl -fsSL "${auth_args[@]}" -H 'Accept: application/vnd.github+json' "$url" \
-          | node -e "let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => { const release = JSON.parse(data); const asset = release.assets.find(a => a.name === 'trace-viewer.tar.gz'); if (!asset) throw new Error('trace-viewer.tar.gz asset not found'); console.log(asset.url); });")
-        curl -fsSL "${auth_args[@]}" -H 'Accept: application/octet-stream' "$asset_url" -o "$RUNNER_TEMP/trace-viewer-runtime/trace-viewer.tar.gz"
+        curl -fsSL "$RUNTIME_URL" -o "$RUNNER_TEMP/trace-viewer-runtime/trace-viewer.tar.gz"
 
     - name: Replace report trace viewer
       shell: bash
