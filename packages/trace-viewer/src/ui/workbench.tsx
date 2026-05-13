@@ -511,16 +511,38 @@ const MobileTimeline: React.FC<{
   onScrub: () => void;
 }> = ({ actions, boundaries, time, setTime, onSelected, onScrub }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
+  const [expanded, setExpanded] = React.useState(false);
+  const collapseTimer = React.useRef<number | undefined>();
+
+  const scheduleCollapse = React.useCallback(() => {
+    window.clearTimeout(collapseTimer.current);
+    collapseTimer.current = window.setTimeout(() => setExpanded(false), 1400);
+  }, []);
+
+  React.useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
 
   const selectTime = (value: number) => {
     setTime(value);
     onScrub();
+    setExpanded(true);
+    scheduleCollapse();
     const action = actions.findLast(action => action.startTime <= value);
     if (action)
       onSelected(action);
   };
 
-  return <div className='mobile-simple-timeline'>
+  return <div
+    className={clsx('mobile-simple-timeline', expanded && 'expanded')}
+    onPointerDown={() => {
+      setExpanded(true);
+      window.clearTimeout(collapseTimer.current);
+    }}
+    onPointerUp={scheduleCollapse}
+    onPointerCancel={scheduleCollapse}
+    onFocus={() => setExpanded(true)}
+    onBlur={scheduleCollapse}
+  >
+    <div className='mobile-simple-timeline-progress' style={{ width: `${((time - boundaries.minimum) / duration) * 100}%` }} />
     <input
       type='range'
       min={boundaries.minimum}
@@ -534,10 +556,6 @@ const MobileTimeline: React.FC<{
       }}
       aria-label='Trace timeline'
     />
-    <div className='mobile-simple-timeline-labels'>
-      <span>{msToString(time - boundaries.minimum)}</span>
-      <span>{msToString(duration)}</span>
-    </div>
   </div>;
 };
 
