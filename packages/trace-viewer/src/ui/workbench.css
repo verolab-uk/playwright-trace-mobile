@@ -155,6 +155,19 @@
     background: white;
   }
 
+  .mobile-snapshot-timeline {
+    flex: none;
+    height: 3px;
+    background: transparent;
+  }
+
+  .mobile-snapshot-timeline-progress {
+    height: 100%;
+    max-width: 100%;
+    background: var(--vscode-progressBar-background);
+    opacity: .75;
+  }
+
   .mobile-screenshot-panel {
     flex: auto;
     display: grid;

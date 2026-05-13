@@ -414,7 +414,10 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             <button className={clsx(mobileDetailTab === 'screenshot' && 'selected')} onClick={() => setMobileDetailTab('screenshot')}>Screenshot</button>
           </div>
           {mobileDetailTab === 'snapshot' ?
-            <MobileSnapshotPanel action={activeAction} model={model} /> :
+            <>
+              <MobileSnapshotPanel action={activeAction} model={model} />
+              {!hideTimeline && <MobileTimelineProgress boundaries={boundaries} time={mobileTimelineTime} />}
+            </> :
             <>
               <MobileScreenshotPanel model={model} time={mobileTimelineTime} />
               {!hideTimeline && <MobileTimeline
@@ -501,6 +504,18 @@ function useMobileWorkbenchLayout(): boolean {
 
   return matches;
 }
+
+
+const MobileTimelineProgress: React.FC<{
+  boundaries: Boundaries;
+  time: number;
+}> = ({ boundaries, time }) => {
+  const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
+  const progress = Math.min(100, Math.max(0, ((time - boundaries.minimum) / duration) * 100));
+  return <div className='mobile-snapshot-timeline' aria-hidden='true'>
+    <div className='mobile-snapshot-timeline-progress' style={{ width: `${progress}%` }} />
+  </div>;
+};
 
 
 const MobileTimeline: React.FC<{
