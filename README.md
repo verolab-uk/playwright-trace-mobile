@@ -7,6 +7,21 @@ Private Verolab fork for a mobile-focused Playwright trace viewer.
 - Imported upstream commit: `cb3312bc04836eb0808ee97bc13cdbe820d78ac1`
 - License: Apache-2.0, inherited from Playwright
 
+
+## Runtime Deployment
+
+This repository publishes one reusable mobile trace viewer runtime. The CD workflow builds `packages/trace-viewer`, packages `packages/playwright-core/lib/vite/traceViewer`, and publishes `trace-viewer.tar.gz` to Cloudflare Pages at `https://playwright-trace-mobile.pages.dev/trace-viewer.tar.gz`.
+
+Other repositories should not build this viewer. After `npx playwright test` creates `playwright-report`, use the shared action to replace the report-local trace viewer runtime:
+
+```yaml
+- uses: verolab-uk/playwright-trace-mobile/.github/actions/install-report-viewer@main
+  with:
+    report-dir: playwright-report
+```
+
+The resulting Playwright report keeps its original `trace/index.html?trace=...` links, but those links open this mobile viewer. Downstream repositories do not need GitHub tokens; they download the public runtime tarball.
+
 ## Upstream README
 
 # 🎭 Playwright

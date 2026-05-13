@@ -1,0 +1,41 @@
+name: Install mobile trace viewer into Playwright report
+description: Replace a Playwright HTML report trace viewer runtime with the published mobile trace viewer runtime.
+
+inputs:
+  report-dir:
+    description: Path to the generated Playwright HTML report directory.
+    required: false
+    default: playwright-report
+  runtime-url:
+    description: URL for the published trace-viewer.tar.gz runtime.
+    required: false
+    default: https://playwright-trace-mobile.pages.dev/trace-viewer.tar.gz
+
+runs:
+  using: composite
+  steps:
+    - name: Download published runtime
+      shell: bash
+      env:
+        RUNTIME_URL: ${{ inputs.runtime-url }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/trace-viewer-runtime"
+        curl -fsSL "$RUNTIME_URL" -o "$RUNNER_TEMP/trace-viewer-runtime/trace-viewer.tar.gz"
+
+    - name: Replace report trace viewer
+      shell: bash
+      env:
+        REPORT_DIR: ${{ inputs.report-dir }}
+      run: |
+        set -euo pipefail
+        if [[ ! -d "$REPORT_DIR" ]]; then
+          echo "Report directory does not exist: $REPORT_DIR" >&2
+          exit 1
+        fi
+        rm -rf "$REPORT_DIR/trace"
+        mkdir -p "$REPORT_DIR/trace"
+        tar -xzf "$RUNNER_TEMP/trace-viewer-runtime/trace-viewer.tar.gz" -C "$REPORT_DIR/trace"
+        test -f "$REPORT_DIR/trace/index.html"
+        test -f "$REPORT_DIR/trace/snapshot.html"
+        test -f "$REPORT_DIR/trace/sw.bundle.js"
