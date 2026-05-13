@@ -599,18 +599,13 @@ const MobileSnapshotPanel: React.FC<{
     width: viewport.width * scale,
     height: viewport.height * scale,
   };
-  const frameOffset = {
-    x: Math.max(0, (measure.width - frameSize.width) / 2),
-    y: Math.max(0, (measure.height - frameSize.height) / 2),
-  };
-
   return <div className='mobile-snapshot-panel' ref={ref}>
-    <div className='mobile-snapshot-url'>{snapshotInfo.url || 'about:blank'}</div>
-    <div className='mobile-snapshot-viewport' style={{ width: frameSize.width, height: frameSize.height, transform: `translate(${frameOffset.x}px, ${frameOffset.y}px)` }}>
+    <div className='mobile-snapshot-viewport' style={{ width: frameSize.width, height: frameSize.height }}>
       <iframe
         ref={iframeRef}
         title='DOM Snapshot'
         sandbox='allow-same-origin allow-scripts'
+        scrolling='no'
         style={{ width: viewport.width, height: viewport.height, transform: `scale(${scale})` }}
       />
     </div>
