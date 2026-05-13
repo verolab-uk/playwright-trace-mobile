@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: deploy-trace-viewer-runtime
@@ -61,25 +61,21 @@ jobs:
           path: public
           if-no-files-found: error
 
-      - name: Publish public runtime repository
+      - name: Publish latest release asset
         env:
-          RUNTIME_DEPLOY_TOKEN: ${{ secrets.RUNTIME_DEPLOY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: trace-viewer-latest
         run: |
           set -euo pipefail
-          if [[ -z "${RUNTIME_DEPLOY_TOKEN}" ]]; then
-            echo "RUNTIME_DEPLOY_TOKEN is required to publish verolab-uk/playwright-trace-mobile-runtime" >&2
-            exit 1
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title 'Latest trace viewer runtime' \
+              --notes "Built from ${GITHUB_SHA}."
+          else
+            gh release create "$TAG" \
+              --title 'Latest trace viewer runtime' \
+              --notes "Built from ${GITHUB_SHA}."
           fi
-          git clone "https://x-access-token:${RUNTIME_DEPLOY_TOKEN}@github.com/verolab-uk/playwright-trace-mobile-runtime.git" "$RUNNER_TEMP/playwright-trace-mobile-runtime"
-          rm -rf "$RUNNER_TEMP/playwright-trace-mobile-runtime"/*
-          cp -R public/. "$RUNNER_TEMP/playwright-trace-mobile-runtime/"
-          cd "$RUNNER_TEMP/playwright-trace-mobile-runtime"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          if git diff --cached --quiet; then
-            echo "Runtime repository already up to date."
-            exit 0
-          fi
-          git commit -m "Publish trace viewer runtime ${GITHUB_SHA}"
-          git push origin main
+          gh release upload "$TAG" public/trace-viewer.tar.gz --clobber
