@@ -1,0 +1,11 @@
+name: PR Auto Approve & Merge
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  pr-auto:
+    uses: verolab-uk/github-actions/.github/workflows/pr-auto.yml@main
+    secrets:
+      GH_VERA_PAT: ${{ secrets.GH_VERA_PAT }}
