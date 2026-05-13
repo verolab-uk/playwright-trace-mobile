@@ -58,6 +58,13 @@
 }
 
 @media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
+  html,
+  body {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .workbench-mobile-landscape {
     overflow: hidden;
     background: var(--vscode-sideBar-background);
