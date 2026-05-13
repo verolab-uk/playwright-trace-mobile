@@ -605,7 +605,6 @@ const MobileSnapshotPanel: React.FC<{
         ref={iframeRef}
         title='DOM Snapshot'
         sandbox='allow-same-origin allow-scripts'
-        scrolling='no'
         style={{ width: viewport.width, height: viewport.height, transform: `scale(${scale})` }}
       />
     </div>
