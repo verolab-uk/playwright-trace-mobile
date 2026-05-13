@@ -369,26 +369,11 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     setMobileTimelineTime(action.startTime);
     onActionSelected(action);
   }, [onActionSelected]);
-  const mobileSwipeStart = React.useRef<{ x: number, y: number } | undefined>();
-  const onMobileSwipeStart = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-    mobileSwipeStart.current = { x: event.clientX, y: event.clientY };
-  }, []);
-  const onMobileSwipeEnd = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-    const start = mobileSwipeStart.current;
-    mobileSwipeStart.current = undefined;
-    if (!start)
-      return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    if (Math.abs(dx) < 48 || Math.abs(dy) > 36)
-      return;
-    setMobileActionsHidden(dx < 0);
-  }, []);
 
   if (isMobileWorkbench) {
     return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
       <div className={clsx('mobile-workbench-shell', mobileActionsHidden && 'actions-hidden')}>
-        {!mobileActionsHidden && <section className='mobile-actions-pane' onPointerDown={onMobileSwipeStart} onPointerUp={onMobileSwipeEnd} onPointerCancel={() => mobileSwipeStart.current = undefined}>
+        {!mobileActionsHidden && <section className='mobile-actions-pane'>
           <div className='mobile-pane-title'>Actions</div>
           {status && <div className='workbench-run-status' data-testid='workbench-run-status'>
             <span className={clsx('codicon', testStatusIcon(status))}></span>
@@ -423,7 +408,6 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
           />
         </section>}
         <section className='mobile-action-pane'>
-          {mobileActionsHidden && <div className='mobile-actions-swipe-edge' onPointerDown={onMobileSwipeStart} onPointerUp={onMobileSwipeEnd} onPointerCancel={() => mobileSwipeStart.current = undefined} aria-hidden='true' />}
           <div className='mobile-pane-tabs'>
             <button onClick={() => setMobileActionsHidden(!mobileActionsHidden)}>{mobileActionsHidden ? 'Show Actions' : 'Hide Actions'}</button>
             <button className={clsx(mobileDetailTab === 'snapshot' && 'selected')} onClick={() => setMobileDetailTab('snapshot')}>Snapshot</button>
