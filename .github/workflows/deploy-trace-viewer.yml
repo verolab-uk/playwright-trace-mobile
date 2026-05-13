@@ -1,0 +1,79 @@
+name: Deploy trace viewer runtime
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-trace-viewer.yml'
+      - 'packages/trace-viewer/**'
+      - 'packages/playwright-core/src/**'
+      - 'packages/protocol/**'
+      - 'packages/isomorphic/**'
+      - 'packages/trace/**'
+      - 'packages/web/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-trace-viewer-runtime
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and publish runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build trace viewer app
+        working-directory: packages/trace-viewer
+        run: npx vite build --config vite.config.ts
+
+      - name: Build trace viewer service worker
+        working-directory: packages/trace-viewer
+        run: npx vite build --config vite.sw.config.ts
+
+      - name: Package runtime
+        run: |
+          set -euo pipefail
+          cd packages/playwright-core/lib/vite/traceViewer
+          tar -czf "$GITHUB_WORKSPACE/trace-viewer.tar.gz" .
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-viewer-runtime
+          path: trace-viewer.tar.gz
+          if-no-files-found: error
+
+      - name: Publish latest release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: trace-viewer-latest
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title 'Latest trace viewer runtime' \
+              --notes "Built from ${GITHUB_SHA}."
+          else
+            gh release create "$TAG" \
+              --title 'Latest trace viewer runtime' \
+              --notes "Built from ${GITHUB_SHA}."
+          fi
+          gh release upload "$TAG" trace-viewer.tar.gz --clobber
