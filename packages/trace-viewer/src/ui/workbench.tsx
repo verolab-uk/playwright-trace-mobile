@@ -362,6 +362,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
   const [mobileDetailTab, setMobileDetailTab] = React.useState<'snapshot' | 'screenshot'>('snapshot');
   const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
+  const [mobileTimelineRevealSignal, setMobileTimelineRevealSignal] = React.useState(0);
   const [mobileActionsHidden, setMobileActionsHidden] = React.useState(false);
 
   React.useEffect(() => setMobileTimelineTime(activeAction?.startTime ?? boundaries.minimum), [activeAction, boundaries.minimum]);
@@ -389,6 +390,8 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
               spellCheck={false}
               value={actionFilterText}
               onChange={e => setActionFilterText(e.target.value)}
+              onFocus={() => setMobileTimelineRevealSignal(signal => signal + 1)}
+              onPointerDown={() => setMobileTimelineRevealSignal(signal => signal + 1)}
             />
           </div>
           <ActionList
@@ -421,6 +424,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             boundaries={boundaries}
             time={mobileTimelineTime}
             setTime={setMobileTimelineTime}
+            revealSignal={mobileTimelineRevealSignal}
             onSelected={onActionSelected}
             onScrub={() => setMobileDetailTab('screenshot')}
           />}
@@ -507,9 +511,10 @@ const MobileTimeline: React.FC<{
   boundaries: Boundaries;
   time: number;
   setTime: (time: number) => void;
+  revealSignal: number;
   onSelected: (action: ActionTraceEventInContext) => void;
   onScrub: () => void;
-}> = ({ actions, boundaries, time, setTime, onSelected, onScrub }) => {
+}> = ({ actions, boundaries, time, setTime, revealSignal, onSelected, onScrub }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
   const [expanded, setExpanded] = React.useState(false);
   const collapseTimer = React.useRef<number | undefined>();
@@ -520,6 +525,13 @@ const MobileTimeline: React.FC<{
   }, []);
 
   React.useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
+
+  React.useEffect(() => {
+    if (!revealSignal)
+      return;
+    setExpanded(true);
+    scheduleCollapse();
+  }, [revealSignal, scheduleCollapse]);
 
   const selectTime = (value: number) => {
     setTime(value);
