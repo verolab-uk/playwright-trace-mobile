@@ -34,6 +34,7 @@ export const WorkbenchLoader: React.FunctionComponent<{
   const [processingErrorMessage, setProcessingErrorMessage] = React.useState<string | null>(null);
   const [fileForLocalModeError, setFileForLocalModeError] = React.useState<string | null>(null);
   const [showProgressDialog, setShowProgressDialog] = React.useState<boolean>(false);
+  const lastMessageTraceSignature = React.useRef<string>();
 
   const processTraceFiles = React.useCallback((files: FileList) => {
     const url = new URL(window.location.href);
@@ -75,6 +76,11 @@ export const WorkbenchLoader: React.FunctionComponent<{
 
       if (method !== 'load' || !(params?.trace instanceof Blob))
         return;
+
+      const traceSignature = `${params.trace.size}:${params.trace.type}`;
+      if (lastMessageTraceSignature.current === traceSignature)
+        return;
+      lastMessageTraceSignature.current = traceSignature;
 
       const traceFile = new File([params.trace], 'trace.zip', { type: 'application/zip' });
       const dataTransfer = new DataTransfer();

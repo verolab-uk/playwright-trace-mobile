@@ -23,7 +23,7 @@ import { ErrorsTab, useErrorsTabModel } from './errorsTab';
 import { ConsoleTab, useConsoleTabModel } from './consoleTab';
 import type { TraceModel, SourceLocation, ActionTraceEventInContext, SourceModel } from '@isomorphic/trace/traceModel';
 import { NetworkTab, useNetworkTabModel } from './networkTab';
-import { SnapshotTabsView } from './snapshotTab';
+import { SnapshotTabsView, collectSnapshots, extendSnapshot } from './snapshotTab';
 import { SourceTab } from './sourceTab';
 import { TabbedPane } from '@web/components/tabbedPane';
 import type { TabbedPaneTabModel } from '@web/components/tabbedPane';
@@ -79,6 +79,8 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const [selectedPropertiesTab, setSelectedPropertiesTab] = useSetting<string>('propertiesTab', showSourcesFirst ? 'source' : 'call');
   const [sidebarLocation, setSidebarLocation] = useSetting<'bottom' | 'right'>('propertiesSidebarLocation', 'bottom');
   const [actionsFilter] = useSetting<ActionGroup[]>('actionsFilter', []);
+  const isMobileWorkbench = useMobileWorkbenchLayout();
+  const effectiveSidebarLocation = isMobileWorkbench ? 'bottom' : sidebarLocation;
 
   // Per-model settings, should be primitive non-retaining types.
   // These will be turned into per-model state in the following patches.
@@ -251,7 +253,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
       stack={revealedStack}
       sources={sources}
       rootDir={rootDir}
-      stackFrameLocation={sidebarLocation === 'bottom' ? 'right' : 'bottom'}
+      stackFrameLocation={effectiveSidebarLocation === 'bottom' ? 'right' : 'bottom'}
       fallbackLocation={fallbackLocation}
       onOpenExternally={onOpenExternally}
     />
@@ -358,6 +360,74 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   };
 
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
+  const [mobileDetailTab, setMobileDetailTab] = React.useState<'snapshot' | 'screenshot'>('snapshot');
+  const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
+  const [mobileActionsHidden, setMobileActionsHidden] = React.useState(false);
+
+  React.useEffect(() => setMobileTimelineTime(activeAction?.startTime ?? boundaries.minimum), [activeAction, boundaries.minimum]);
+  const onMobileActionSelected = React.useCallback((action: ActionTraceEventInContext) => {
+    setMobileTimelineTime(action.startTime);
+    onActionSelected(action);
+  }, [onActionSelected]);
+
+  if (isMobileWorkbench) {
+    return <div className='vbox workbench workbench-mobile-landscape' {...(inert ? { inert: true } : {})}>
+      <div className={clsx('mobile-workbench-shell', mobileActionsHidden && 'actions-hidden')}>
+        {!mobileActionsHidden && <section className='mobile-actions-pane'>
+          <div className='mobile-pane-title'>Actions</div>
+          {status && <div className='workbench-run-status' data-testid='workbench-run-status'>
+            <span className={clsx('codicon', testStatusIcon(status))}></span>
+            <div>{testStatusText(status)}</div>
+            <div className='spacer'></div>
+            <div className='workbench-run-duration'>{time ? msToString(time) : ''}</div>
+          </div>}
+          <div className='workbench-action-filter'>
+            <input
+              type='search'
+              placeholder='Filter'
+              aria-label='Filter actions'
+              spellCheck={false}
+              value={actionFilterText}
+              onChange={e => setActionFilterText(e.target.value)}
+            />
+          </div>
+          <ActionList
+            sdkLanguage={sdkLanguage}
+            actions={actions || []}
+            selectedAction={model ? selectedAction : undefined}
+            selectedTime={selectedTime}
+            setSelectedTime={setSelectedTime}
+            treeState={treeState}
+            setTreeState={setTreeState}
+            onSelected={onMobileActionSelected}
+            onHighlighted={setHighlightedAction}
+            revealActionAttachment={revealActionAttachment}
+            revealConsole={() => selectPropertiesTab('console')}
+            isLive={isLive}
+            actionFilterText={actionFilterText}
+          />
+        </section>}
+        <section className='mobile-action-pane'>
+          <div className='mobile-pane-tabs'>
+            <button onClick={() => setMobileActionsHidden(!mobileActionsHidden)}>{mobileActionsHidden ? 'Show Actions' : 'Hide Actions'}</button>
+            <button className={clsx(mobileDetailTab === 'snapshot' && 'selected')} onClick={() => setMobileDetailTab('snapshot')}>Snapshot</button>
+            <button className={clsx(mobileDetailTab === 'screenshot' && 'selected')} onClick={() => setMobileDetailTab('screenshot')}>Screenshot</button>
+          </div>
+          {mobileDetailTab === 'snapshot' ?
+            <MobileSnapshotPanel action={activeAction} model={model} /> :
+            <MobileScreenshotPanel model={model} time={mobileTimelineTime} />}
+          {!hideTimeline && <MobileTimeline
+            actions={actions || []}
+            boundaries={boundaries}
+            time={mobileTimelineTime}
+            setTime={setMobileTimelineTime}
+            onSelected={onActionSelected}
+            onScrub={() => setMobileDetailTab('screenshot')}
+          />}
+        </section>
+      </div>
+    </div>;
+  }
 
   return <div className='vbox workbench' {...(inert ? { inert: true } : {})}>
     {!hideTimeline && <Timeline
@@ -371,7 +441,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     />}
     <SplitView
       sidebarSize={250}
-      orientation={sidebarLocation === 'bottom' ? 'vertical' : 'horizontal'} settingName='propertiesSidebar'
+      orientation={effectiveSidebarLocation === 'bottom' ? 'vertical' : 'horizontal'} settingName='propertiesSidebar'
       main={<SplitView
         sidebarSize={250}
         orientation='horizontal'
@@ -400,8 +470,8 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
         tabs={tabs}
         selectedTab={selectedPropertiesTab}
         setSelectedTab={selectPropertiesTab}
-        rightToolbar={[
-          sidebarLocation === 'bottom' ?
+        rightToolbar={isMobileWorkbench ? [] : [
+          effectiveSidebarLocation === 'bottom' ?
             <ToolbarButton title='Dock to right' icon='layout-sidebar-right-off' onClick={() => {
               setSidebarLocation('right');
             }} /> :
@@ -409,8 +479,106 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
               setSidebarLocation('bottom');
             }} />
         ]}
-        mode={sidebarLocation === 'bottom' ? 'default' : 'select'}
+        mode={effectiveSidebarLocation === 'bottom' ? 'default' : 'select'}
       />}
+    />
+  </div>;
+};
+
+
+function useMobileWorkbenchLayout(): boolean {
+  const query = '(max-width: 700px), (pointer: coarse) and (max-width: 900px)';
+  const [matches, setMatches] = React.useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+
+  React.useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return matches;
+}
+
+
+const MobileTimeline: React.FC<{
+  actions: ActionTraceEventInContext[];
+  boundaries: Boundaries;
+  time: number;
+  setTime: (time: number) => void;
+  onSelected: (action: ActionTraceEventInContext) => void;
+  onScrub: () => void;
+}> = ({ actions, boundaries, time, setTime, onSelected, onScrub }) => {
+  const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
+
+  const selectTime = (value: number) => {
+    setTime(value);
+    onScrub();
+    const action = actions.findLast(action => action.startTime <= value);
+    if (action)
+      onSelected(action);
+  };
+
+  return <div className='mobile-simple-timeline'>
+    <input
+      type='range'
+      min={boundaries.minimum}
+      max={boundaries.maximum}
+      step={1}
+      value={time}
+      onChange={event => selectTime(Number(event.currentTarget.value))}
+      onPointerMove={event => {
+        if (event.buttons)
+          selectTime(Number(event.currentTarget.value));
+      }}
+      aria-label='Trace timeline'
+    />
+    <div className='mobile-simple-timeline-labels'>
+      <span>{msToString(time - boundaries.minimum)}</span>
+      <span>{msToString(duration)}</span>
+    </div>
+  </div>;
+};
+
+function findScreencastFrame(model: TraceModel | undefined, time: number): { sha1: string; width: number; height: number; timestamp: number } | undefined {
+  let closest: { sha1: string; width: number; height: number; timestamp: number } | undefined;
+  for (const page of model?.pages || []) {
+    for (const frame of page.screencastFrames) {
+      if (!closest || Math.abs(frame.timestamp - time) < Math.abs(closest.timestamp - time))
+        closest = frame;
+    }
+  }
+  return closest;
+}
+
+
+const MobileScreenshotPanel: React.FC<{
+  model: TraceModel | undefined;
+  time: number;
+}> = ({ model, time }) => {
+  const frame = React.useMemo(() => findScreencastFrame(model, time), [model, time]);
+  return <div className='mobile-screenshot-panel'>
+    {frame ? <img src={model?.createRelativeUrl(`sha1/${frame.sha1}`)} /> : <div className='mobile-screenshot-empty'>No screenshot</div>}
+  </div>;
+};
+
+const MobileSnapshotPanel: React.FC<{
+  action: ActionTraceEventInContext | undefined;
+  model: TraceModel | undefined;
+}> = ({ action, model }) => {
+  const [shouldPopulateCanvasFromScreenshot] = useSetting('shouldPopulateCanvasFromScreenshot', false);
+  const snapshotUrl = React.useMemo(() => {
+    const snapshots = collectSnapshots(action);
+    const snapshot = snapshots.action || snapshots.after || snapshots.before;
+    return model && snapshot ? extendSnapshot(model.traceUri, snapshot, shouldPopulateCanvasFromScreenshot).snapshotUrl : undefined;
+  }, [action, model, shouldPopulateCanvasFromScreenshot]);
+
+  return <div className='mobile-snapshot-panel'>
+    <iframe
+      src={snapshotUrl || 'about:blank'}
+      title='DOM Snapshot'
+      sandbox='allow-same-origin allow-scripts'
     />
   </div>;
 };
