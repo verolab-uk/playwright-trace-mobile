@@ -414,16 +414,20 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             <button className={clsx(mobileDetailTab === 'screenshot' && 'selected')} onClick={() => setMobileDetailTab('screenshot')}>Screenshot</button>
           </div>
           {mobileDetailTab === 'snapshot' ?
-            <MobileSnapshotPanel action={activeAction} model={model} /> :
-            <MobileScreenshotPanel model={model} time={mobileTimelineTime} />}
-          {!hideTimeline && <MobileTimeline
-            actions={actions || []}
-            boundaries={boundaries}
-            time={mobileTimelineTime}
-            setTime={setMobileTimelineTime}
-            onSelected={onActionSelected}
-            onScrub={() => setMobileDetailTab('screenshot')}
-          />}
+            <>
+              <MobileSnapshotPanel action={activeAction} model={model} />
+              {!hideTimeline && <MobileTimelineProgress boundaries={boundaries} time={mobileTimelineTime} />}
+            </> :
+            <>
+              <MobileScreenshotPanel model={model} time={mobileTimelineTime} />
+              {!hideTimeline && <MobileTimeline
+                actions={actions || []}
+                boundaries={boundaries}
+                time={mobileTimelineTime}
+                setTime={setMobileTimelineTime}
+                onSelected={onActionSelected}
+              />}
+            </>}
         </section>
       </div>
     </div>;
@@ -502,19 +506,29 @@ function useMobileWorkbenchLayout(): boolean {
 }
 
 
+const MobileTimelineProgress: React.FC<{
+  boundaries: Boundaries;
+  time: number;
+}> = ({ boundaries, time }) => {
+  const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
+  const progress = Math.min(100, Math.max(0, ((time - boundaries.minimum) / duration) * 100));
+  return <div className='mobile-snapshot-timeline' aria-hidden='true'>
+    <div className='mobile-snapshot-timeline-progress' style={{ width: `${progress}%` }} />
+  </div>;
+};
+
+
 const MobileTimeline: React.FC<{
   actions: ActionTraceEventInContext[];
   boundaries: Boundaries;
   time: number;
   setTime: (time: number) => void;
   onSelected: (action: ActionTraceEventInContext) => void;
-  onScrub: () => void;
-}> = ({ actions, boundaries, time, setTime, onSelected, onScrub }) => {
+}> = ({ actions, boundaries, time, setTime, onSelected }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
 
   const selectTime = (value: number) => {
     setTime(value);
-    onScrub();
     const action = actions.findLast(action => action.startTime <= value);
     if (action)
       onSelected(action);
