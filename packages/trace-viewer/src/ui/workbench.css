@@ -78,6 +78,7 @@
 
   .mobile-actions-pane,
   .mobile-action-pane {
+    position: relative;
     display: flex;
     min-width: 0;
     min-height: 0;
@@ -87,6 +88,17 @@
 
   .mobile-actions-pane {
     border-right: 1px solid var(--vscode-panel-border);
+    touch-action: pan-y;
+  }
+
+  .mobile-actions-swipe-edge {
+    position: absolute;
+    top: 22px;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    width: 28px;
+    touch-action: pan-y;
   }
 
   .mobile-pane-title,
