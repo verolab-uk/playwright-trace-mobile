@@ -361,9 +361,13 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   };
 
   const actionsFilterWithCount = selectedNavigatorTab === 'actions' && <ActionsFilterButton counters={model?.actionCounters} hiddenActionsCount={hiddenActionsCount} />;
-  const [mobileDetailTab, setMobileDetailTab] = React.useState<'snapshot' | 'screenshot'>('snapshot');
+  const [mobileDetailTab, setMobileDetailTab] = React.useState<string>('snapshot');
   const [mobileTimelineTime, setMobileTimelineTime] = React.useState(boundaries.minimum);
   const [mobileActionsHidden, setMobileActionsHidden] = React.useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
+  const mobileMoreTabs = [consoleTab, networkTab, errorsTab, callTab, logTab, metadataTab];
+  const activeMobileMoreTab = mobileMoreTabs.find(tab => tab.id === mobileDetailTab);
+  const renderMobileMoreTab = (tab: TabbedPaneTabModel) => tab.render?.() ?? tab.component;
 
   React.useEffect(() => setMobileTimelineTime(activeAction?.startTime ?? boundaries.minimum), [activeAction, boundaries.minimum]);
   const onMobileActionSelected = React.useCallback((action: ActionTraceEventInContext) => {
@@ -403,7 +407,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             onSelected={onMobileActionSelected}
             onHighlighted={setHighlightedAction}
             revealActionAttachment={revealActionAttachment}
-            revealConsole={() => selectPropertiesTab('console')}
+            revealConsole={() => setMobileDetailTab('console')}
             isLive={isLive}
             actionFilterText={actionFilterText}
           />
@@ -413,12 +417,23 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
             <button onClick={() => setMobileActionsHidden(!mobileActionsHidden)}>{mobileActionsHidden ? 'Show Actions' : 'Hide Actions'}</button>
             <button className={clsx(mobileDetailTab === 'snapshot' && 'selected')} onClick={() => setMobileDetailTab('snapshot')}>Snapshot</button>
             <button className={clsx(mobileDetailTab === 'screenshot' && 'selected')} onClick={() => setMobileDetailTab('screenshot')}>Screenshot</button>
+            <button className={clsx(activeMobileMoreTab && 'selected')} onClick={() => setMobileMoreOpen(!mobileMoreOpen)}>More</button>
+            {mobileMoreOpen && <div className='mobile-more-menu'>
+              {mobileMoreTabs.map(tab => <button key={tab.id} className={clsx(mobileDetailTab === tab.id && 'selected')} onClick={() => {
+                setMobileDetailTab(tab.id);
+                setMobileMoreOpen(false);
+              }}>
+                <span>{tab.title}</span>
+                {tab.count !== undefined && <span className='mobile-more-count'>{tab.count}</span>}
+                {tab.errorCount !== undefined && tab.errorCount > 0 && <span className='mobile-more-count error'>{tab.errorCount}</span>}
+              </button>)}
+            </div>}
           </div>
           {mobileDetailTab === 'snapshot' ?
             <>
               <MobileSnapshotPanel action={activeAction} model={model} />
               {!hideTimeline && <MobileTimelineProgress boundaries={boundaries} time={mobileTimelineTime} />}
-            </> :
+            </> : mobileDetailTab === 'screenshot' ?
             <>
               <MobileScreenshotPanel model={model} time={mobileTimelineTime} />
               {!hideTimeline && <MobileTimeline
@@ -428,7 +443,11 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
                 setTime={setMobileTimelineTime}
                 onSelected={onActionSelected}
               />}
-            </>}
+            </> :
+            <div className='mobile-detail-panel'>
+              <div className='mobile-detail-title'>{activeMobileMoreTab?.title}</div>
+              {activeMobileMoreTab && renderMobileMoreTab(activeMobileMoreTab)}
+            </div>}
         </section>
       </div>
     </div>;
