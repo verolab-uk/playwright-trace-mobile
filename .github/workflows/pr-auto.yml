@@ -5,7 +5,21 @@ on:
     types: [opened, reopened]
 
 jobs:
-  pr-auto:
-    uses: verolab-uk/github-actions/.github/workflows/pr-auto.yml@main
-    secrets:
-      GH_VERA_PAT: ${{ secrets.GH_VERA_PAT }}
+  auto-approve:
+    if: github.event.pull_request.user.login == 'vickyliin'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto approve
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GH_VERA_PAT }}
+
+  auto-merge:
+    if: github.event.pull_request.user.login == 'vera0409'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge
+        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_VERA_PAT }}
+          GH_REPO: ${{ github.repository }}
