@@ -34,7 +34,7 @@ export const WorkbenchLoader: React.FunctionComponent<{
   const [processingErrorMessage, setProcessingErrorMessage] = React.useState<string | null>(null);
   const [fileForLocalModeError, setFileForLocalModeError] = React.useState<string | null>(null);
   const [showProgressDialog, setShowProgressDialog] = React.useState<boolean>(false);
-  const lastMessageTraceSignature = React.useRef<string>();
+  const lastMessageTraceSignature = React.useRef<string | undefined>(undefined);
 
   const processTraceFiles = React.useCallback((files: FileList) => {
     const url = new URL(window.location.href);
