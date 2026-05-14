@@ -171,6 +171,7 @@
   }
 
   .mobile-detail-panel {
+    position: relative;
     flex: auto;
     display: flex;
     min-height: 0;
