@@ -15,6 +15,7 @@
  */
 
 import { asLocators } from './locatorGenerators';
+import { encodeTestIdAttributeName } from './locatorUtils';
 import { parseSelector } from './selectorParser';
 import { escapeForAttributeSelector, escapeForTextSelector } from './stringUtils';
 
@@ -156,6 +157,7 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
   // Transform to selector engines.
   template = template
       .replace(/\,set([\w]+)\(([^)]+)\)/g, (_, group1, group2) => ',' + group1.toLowerCase() + '=' + group2.toLowerCase())
+      .replace(/framelocator\(\)/g, 'internal:control=any-frame')
       .replace(/framelocator\(([^)]+)\)/g, '$1.internal:control=enter-frame')
       .replace(/contentframe(\(\))?/g, 'internal:control=enter-frame')
       .replace(/locator\(([^)]+),hastext=([^),]+)\)/g, 'locator($1).internal:has-text=$2')
@@ -165,13 +167,14 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
       .replace(/getbyrole\(([^)]+)\)/g, 'internal:role=$1')
       .replace(/getbytext\(([^)]+)\)/g, 'internal:text=$1')
       .replace(/getbylabel\(([^)]+)\)/g, 'internal:label=$1')
-      .replace(/getbytestid\(([^)]+)\)/g, `internal:testid=[${testIdAttributeName}=$1]`)
+      .replace(/getbytestid\(([^)]+)\)/g, `internal:testid=[${encodeTestIdAttributeName(testIdAttributeName)}=$1]`)
       .replace(/getby(placeholder|alt|title)(?:text)?\(([^)]+)\)/g, 'internal:attr=[$1=$2]')
       .replace(/first(\(\))?/g, 'nth=0')
       .replace(/last(\(\))?/g, 'nth=-1')
       .replace(/nth\(([^)]+)\)/g, 'nth=$1')
       .replace(/filter\(,?visible=true\)/g, 'visible=true')
       .replace(/filter\(,?visible=false\)/g, 'visible=false')
+      .replace(/\.visible(\(\))?(?!=)/g, '.visible=true')
       .replace(/filter\(,?hastext=([^)]+)\)/g, 'internal:has-text=$1')
       .replace(/filter\(,?hasnottext=([^)]+)\)/g, 'internal:has-not-text=$1')
       .replace(/filter\(,?has2=([^)]+)\)/g, 'internal:has=$1')
@@ -219,7 +222,7 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
   }).join(' >> ');
 }
 
-export function locatorOrSelectorAsSelector(language: Language, locator: string, testIdAttributeName: string): string {
+export function locatorOrSelectorAsSelector(language: Language, locator: string, testIdAttributeName: string = 'data-testid'): string {
   try {
     return unsafeLocatorOrSelectorAsSelector(language, locator, testIdAttributeName);
   } catch (e) {
@@ -227,7 +230,7 @@ export function locatorOrSelectorAsSelector(language: Language, locator: string,
   }
 }
 
-export function unsafeLocatorOrSelectorAsSelector(language: Language, locator: string, testIdAttributeName: string): string {
+export function unsafeLocatorOrSelectorAsSelector(language: Language, locator: string, testIdAttributeName: string = 'data-testid'): string {
   try {
     parseSelector(locator);
     return locator;

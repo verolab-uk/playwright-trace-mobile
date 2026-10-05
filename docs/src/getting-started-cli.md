@@ -15,7 +15,7 @@ Playwright comes with `playwright-cli`, a command-line interface for browser aut
 ## Prerequisites
 
 Before you begin, make sure you have the following installed:
-- [Node.js](https://nodejs.org/) 18 or newer
+- [Node.js](https://nodejs.org/) 20 or newer
 - A coding agent: Claude Code, GitHub Copilot, or similar
 
 ## Installation
@@ -30,7 +30,8 @@ playwright-cli --help
 Alternatively, install `@playwright/cli` as a local dependency and use `npx`:
 
 ```bash
-npx playwright-cli --help
+npm install -D @playwright/cli@latest
+npx playwright cli --help
 ```
 
 ### Installing skills
@@ -39,6 +40,12 @@ Coding agents like Claude Code and GitHub Copilot can use locally installed skil
 
 ```bash
 playwright-cli install --skills
+```
+
+To share the skills across all your projects, add the `-g` flag to install them into your home directory (`~/.claude/skills` or, with `--skills=agents`, `~/.agents/skills`):
+
+```bash
+playwright-cli install --skills -g
 ```
 
 ### Skills-less operation
@@ -100,7 +107,7 @@ playwright-cli check <ref>              # check a checkbox or radio button
 playwright-cli uncheck <ref>            # uncheck a checkbox
 playwright-cli hover <ref>              # hover over element
 playwright-cli drag <startRef> <endRef> # drag and drop between elements
-playwright-cli upload <file>            # upload files
+playwright-cli upload <files...>        # upload one or multiple files
 playwright-cli close                    # close the page
 ```
 
@@ -129,6 +136,7 @@ playwright-cli snapshot --filename=f    # save snapshot to specific file
 playwright-cli screenshot               # screenshot of the current page
 playwright-cli screenshot [ref]         # screenshot of a specific element
 playwright-cli screenshot --filename=f  # save with specific filename
+playwright-cli screenshot --hires       # capture using device pixels
 playwright-cli pdf                      # save page as PDF
 ```
 

@@ -70,8 +70,6 @@ export const WorkbenchLoader: React.FunctionComponent<{
   });
   React.useEffect(() => {
     const listener = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin)
-        return;
       const { method, params } = e.data;
 
       if (method !== 'load' || !(params?.trace instanceof Blob))
@@ -90,8 +88,11 @@ export const WorkbenchLoader: React.FunctionComponent<{
       processTraceFiles(dataTransfer.files);
     };
     window.addEventListener('message', listener);
+    window.opener?.postMessage({ method: 'ready' }, '*');
+    if (window.parent !== window)
+      window.parent.postMessage({ method: 'ready' }, '*');
     return () => window.removeEventListener('message', listener);
-  });
+  }, [processTraceFiles]);
 
   const handleDropEvent = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -208,7 +209,7 @@ export const WorkbenchLoader: React.FunctionComponent<{
       {model.title && <div className='title'>{model.title}</div>}
       <div className='spacer'></div>
       <DialogToolbarButton icon='settings-gear' title='Settings' dialogDataTestId='settings-toolbar-dialog'>
-        <DefaultSettingsView location='trace-viewer' />
+        <DefaultSettingsView location='trace-viewer' model={model} />
       </DialogToolbarButton>
     </div>
     <Workbench model={model} inert={showFileUploadDropArea} />

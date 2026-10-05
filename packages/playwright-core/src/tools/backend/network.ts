@@ -20,6 +20,7 @@ import * as z from 'zod';
 
 import { getExtensionForMimeType, isTextualMimeType } from '@isomorphic/mimeType';
 import { isRegexString } from '@isomorphic/rtti';
+import { truncateDataUrl } from '@isomorphic/stringUtils';
 
 import { defineTool, defineTabTool } from './tool';
 
@@ -36,7 +37,7 @@ const requests = defineTabTool({
     inputSchema: z.object({
       static: z.boolean().default(false).describe('Whether to include successful static resources like images, fonts, scripts, etc. Defaults to false.'),
       filter: z.string().optional().refine(v => !v || isRegexString(v), { message: 'Invalid regular expression' }).describe('Only return requests whose URL matches this regexp (e.g. "/api/.*user").'),
-      filename: z.string().optional().describe('Filename to save the network requests to. If not provided, requests are returned as text.'),
+      filename: z.string().optional().describe('File name to save the network requests to. Relative file names are resolved against the workspace root. If not provided, requests are returned as text.'),
     }),
     type: 'readOnly',
   },
@@ -80,7 +81,7 @@ const request = defineTabTool({
     inputSchema: z.object({
       index: z.number().int().min(1).describe('1-based index of the request, as printed by browser_network_requests.'),
       part: z.enum(REQUEST_PARTS).optional().describe('Return only this part of the request. Omit to return full details.'),
-      filename: z.string().optional().describe('Filename to save the result to. If not provided, output is returned as text.'),
+      filename: z.string().optional().describe('File name to save the result to. Relative file names are resolved against the workspace root. If not provided, output is returned as text.'),
     }),
     type: 'readOnly',
   },
@@ -128,7 +129,7 @@ export function isFetch(request: playwright.Request): boolean {
 
 export function renderRequestLine(request: playwright.Request): string {
   const response = request.existingResponse();
-  let line = `[${request.method().toUpperCase()}] ${request.url()}`;
+  let line = `[${request.method().toUpperCase()}] ${truncateDataUrl(request.url())}`;
   if (response)
     line += ` => [${response.status()}] ${response.statusText()}`;
   else if (request.failure())
@@ -140,7 +141,7 @@ function renderRequestDetails(index: number, request: playwright.Request, skillM
   const httpResponse = request.existingResponse();
   const responseHeaders = httpResponse?.headers();
   const lines: string[] = [];
-  lines.push(`#${index} [${request.method().toUpperCase()}] ${request.url()}`);
+  lines.push(`#${index} [${request.method().toUpperCase()}] ${truncateDataUrl(request.url())}`);
 
   lines.push('');
   lines.push('  General');
@@ -256,7 +257,7 @@ async function saveResponseBody(request: playwright.Request, response: ToolRespo
   if (!body.length)
     return undefined;
   const ext = getExtensionForMimeType(httpResponse.headers()['content-type']);
-  const resolved = await response.resolveClientFile({ prefix: 'response', ext, suggestedFilename }, 'Response body');
+  const resolved = await response.resolveClientOutputFile({ prefix: 'response', ext, suggestedFilename }, 'Response body');
   await fs.promises.writeFile(resolved.fileName, body);
   return resolved.relativeName;
 }

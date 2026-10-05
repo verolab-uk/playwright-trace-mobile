@@ -25,7 +25,7 @@ const videoStart = defineTool({
     title: 'Start video',
     description: 'Start video recording',
     inputSchema: z.object({
-      filename: z.string().optional().describe('Filename to save the video.'),
+      filename: z.string().optional().describe('File name to save the video to. Relative file names are resolved against the workspace root. If not specified, the video is saved into the output directory as `video-{timestamp}.webm`.'),
       size: z.object({
         width: z.number().describe('Video width'),
         height: z.number().describe('Video height'),
@@ -35,7 +35,7 @@ const videoStart = defineTool({
   },
 
   handle: async (context, params, response) => {
-    const resolvedFile = await response.resolveClientFile({ prefix: 'video', ext: 'webm', suggestedFilename: params.filename }, 'Video');
+    const resolvedFile = await response.resolveClientOutputFile({ prefix: 'video', ext: 'webm', suggestedFilename: params.filename }, 'Video');
     await context.startVideoRecording(resolvedFile.fileName, { size: params.size });
     response.addTextResult('Video recording started.');
   },
@@ -59,7 +59,7 @@ const videoStop = defineTool({
       return;
     }
     for (const fileName of fileNames) {
-      const resolvedFile = await response.resolveClientFile({
+      const resolvedFile = await response.resolveClientOutputFile({
         prefix: 'video',
         ext: 'webm',
         suggestedFilename: fileName
@@ -94,8 +94,57 @@ const videoChapter = defineTool({
   },
 });
 
+const actionPosition = z.enum(['top-left', 'top', 'top-right', 'bottom-left', 'bottom', 'bottom-right']);
+const actionCursor = z.enum(['none', 'pointer']);
+
+const videoShowActions = defineTool({
+  capability: 'devtools',
+
+  schema: {
+    name: 'browser_video_show_actions',
+    title: 'Show action overlays',
+    description: 'Annotate subsequent actions performed on the page with a callout that names the action and highlights the target element. Useful while video recording or screencasting.',
+    inputSchema: z.object({
+      duration: z.number().optional().describe('How long each action annotation stays on screen, in milliseconds. Defaults to 500.'),
+      position: actionPosition.optional().describe('Where to place the action title relative to the page. Defaults to top-right.'),
+      cursor: actionCursor.optional().describe('Cursor decoration for pointer actions. "pointer" (default) animates a mouse pointer from the previous action point to the next one; "none" disables the cursor decoration.'),
+    }),
+    type: 'readOnly',
+  },
+
+  handle: async (context, params, response) => {
+    const tab = context.currentTabOrDie();
+    await tab.page.screencast.showActions({
+      duration: params.duration,
+      position: params.position,
+      cursor: params.cursor,
+    });
+    response.addTextResult('Action annotations enabled.');
+  },
+});
+
+const videoHideActions = defineTool({
+  capability: 'devtools',
+
+  schema: {
+    name: 'browser_video_hide_actions',
+    title: 'Hide action overlays',
+    description: 'Stop annotating actions performed on the page.',
+    inputSchema: z.object({}),
+    type: 'readOnly',
+  },
+
+  handle: async (context, params, response) => {
+    const tab = context.currentTabOrDie();
+    await tab.page.screencast.hideActions();
+    response.addTextResult('Action annotations disabled.');
+  },
+});
+
 export default [
   videoStart,
   videoStop,
   videoChapter,
+  videoShowActions,
+  videoHideActions,
 ];

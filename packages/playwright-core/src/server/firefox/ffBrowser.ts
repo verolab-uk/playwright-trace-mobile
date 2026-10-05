@@ -28,9 +28,10 @@ import type { SdkObject } from '../instrumentation';
 import type { InitScript, Page } from '../page';
 import type { ConnectionTransport } from '../transport';
 import type * as types from '../types';
+import type { HttpCredentials } from '@protocol/structs';
 import type { FFSession } from './ffConnection';
 import type { Protocol } from './protocol';
-import type * as channels from '@protocol/channels';
+import type * as channels from '../channels';
 
 export class FFBrowser extends Browser {
   private _connection: FFConnection;
@@ -90,8 +91,6 @@ export class FFBrowser extends Browser {
   }
 
   async doCreateNewContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
-    if (options.isMobile)
-      throw new Error('options.isMobile is not supported in Firefox');
     const { browserContextId } = await this.session.send('Browser.createBrowserContext', { removeOnDetach: true });
     const context = new FFBrowserContext(this, browserContextId, options);
     await context.initialize();
@@ -280,18 +279,19 @@ export class FFBrowserContext extends BrowserContext {
   }
 
   async doGrantPermissions(origin: string, permissions: string[]) {
-    const webPermissionToProtocol = new Map<string, string>([
-      ['geolocation', 'geo'],
-      ['persistent-storage', 'persistent-storage'],
-      ['push', 'push'],
-      ['notifications', 'desktop-notification'],
-      ['screen-wake-lock', 'screen-wake-lock'],
+    const webPermissionToProtocol = new Map<string, string[]>([
+      ['geolocation', ['geo']],
+      ['persistent-storage', ['persistent-storage']],
+      ['push', ['push']],
+      ['notifications', ['desktop-notification']],
+      ['screen-wake-lock', ['screen-wake-lock']],
+      ['local-network-access', ['local-network', 'loopback-network']],
     ]);
-    const filtered = permissions.map(permission => {
-      const protocolPermission = webPermissionToProtocol.get(permission);
-      if (!protocolPermission)
+    const filtered = permissions.flatMap(permission => {
+      const protocolPermissions = webPermissionToProtocol.get(permission);
+      if (!protocolPermissions)
         throw new Error('Unknown permission: ' + permission);
-      return protocolPermission;
+      return protocolPermissions;
     });
     await this._browser.session.send('Browser.grantPermissions', { origin: origin, browserContextId: this._browserContextId, permissions: filtered });
   }
@@ -307,10 +307,7 @@ export class FFBrowserContext extends BrowserContext {
   }
 
   async doUpdateExtraHTTPHeaders(): Promise<void> {
-    let allHeaders = this._options.extraHTTPHeaders || [];
-    if (this._options.locale)
-      allHeaders = network.mergeHeaders([allHeaders, network.singleHeader('Accept-Language', this._options.locale)]);
-    await this._browser.session.send('Browser.setExtraHTTPHeaders', { browserContextId: this._browserContextId, headers: allHeaders });
+    await this._browser.session.send('Browser.setExtraHTTPHeaders', { browserContextId: this._browserContextId, headers: this._options.extraHTTPHeaders || [] });
   }
 
   async setUserAgent(userAgent: string | undefined): Promise<void> {
@@ -321,13 +318,9 @@ export class FFBrowserContext extends BrowserContext {
     await this._browser.session.send('Browser.setOnlineOverride', { browserContextId: this._browserContextId, override: this._options.offline ? 'offline' : 'online' });
   }
 
-  async doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
+  async doSetHTTPCredentials(httpCredentials?: HttpCredentials[]): Promise<void> {
     this._options.httpCredentials = httpCredentials;
-    let credentials = null;
-    if (httpCredentials) {
-      const { username, password, origin } = httpCredentials;
-      credentials = { username, password, origin };
-    }
+    const credentials = httpCredentials ? httpCredentials.map(({ username, password, origin }) => ({ username, password, origin })) : null;
     await this._browser.session.send('Browser.setHTTPCredentials', { browserContextId: this._browserContextId, credentials });
   }
 
@@ -359,7 +352,9 @@ export class FFBrowserContext extends BrowserContext {
       return;
     const viewport = {
       viewportSize: { width: this._options.viewport.width, height: this._options.viewport.height },
+      screenSize: this._options.screen,
       deviceScaleFactor: this._options.deviceScaleFactor || 1,
+      isMobile: !!this._options.isMobile,
     };
     await this._browser.session.send('Browser.setDefaultViewport', { browserContextId: this._browserContextId, viewport });
   }
@@ -394,8 +389,6 @@ export class FFBrowserContext extends BrowserContext {
   override async doExposePlaywrightBinding() {
     this._browser.session.send('Browser.addBinding', { browserContextId: this._browserContextId, name: PageBinding.kBindingName, script: '' });
   }
-
-  onClosePersistent() {}
 
   override async clearCache(): Promise<void> {
     // Clearing only the context cache does not work: https://bugzilla.mozilla.org/show_bug.cgi?id=1819147

@@ -38,6 +38,7 @@ export type Options = {
   colorScheme?: string;
   device?: string;
   geolocation?: string;
+  httpCredentials?: string;
   ignoreHttpsErrors?: boolean;
   lang?: string;
   loadStorage?: string;
@@ -85,9 +86,6 @@ async function launchContext(options: Options, extraOptions: LaunchOptions): Pro
     delete contextOptions.isMobile;
   }
 
-  if (contextOptions.isMobile && browserType.name() === 'firefox')
-    contextOptions.isMobile = undefined;
-
   if (options.blockServiceWorkers)
     contextOptions.serviceWorkers = 'block';
 
@@ -126,6 +124,18 @@ async function launchContext(options: Options, extraOptions: LaunchOptions): Pro
       throw new Error('Invalid geolocation format, should be "lat,long". For example --geolocation="37.819722,-122.478611"');
     }
     contextOptions.permissions = ['geolocation'];
+  }
+
+  // HTTP credentials
+
+  if (options.httpCredentials) {
+    const separator = options.httpCredentials.indexOf(':');
+    if (separator === -1)
+      throw new Error('Invalid http credentials format: use "username:password", for example --http-credentials="admin:secret"');
+    contextOptions.httpCredentials = {
+      username: options.httpCredentials.substring(0, separator),
+      password: options.httpCredentials.substring(separator + 1),
+    };
   }
 
   // User agent
@@ -247,7 +257,7 @@ export async function codegen(options: Options & { target: string, output?: stri
   });
   const donePromise = new ManualPromise<void>();
   maybeSetupTestHooks(browser, closeBrowser, donePromise);
-  dotenv.config({ path: 'playwright.env' });
+  dotenv.config({ path: 'playwright.env', quiet: true });
   await context._enableRecorder({
     language,
     launchOptions,

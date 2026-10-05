@@ -25,8 +25,11 @@ import { eventsHelper } from '@utils/eventsHelper';
 import { isPathInside, isSystemDirectory, isWritable } from '@utils/fileUtils';
 import { playwright } from '../../inprocess';
 
+import { dedent, languageGeneratorId, secretCode } from './codegen';
 import { Tab } from './tab';
 
+import type { BrowserContextEx } from './browserContextEx';
+import type { CodegenLanguage } from './codegen';
 import type * as playwrightTypes from '../../..';
 import type { SessionLog } from './sessionLog';
 import type { Disposable } from '@isomorphic/disposable';
@@ -37,7 +40,7 @@ const testDebug = debug('pw:mcp:test');
 export type ContextConfig = {
   allowUnrestrictedFileAccess?: boolean;
   capabilities?: ToolCapability[];
-  codegen?: 'typescript' | 'none';
+  codegen?: 'typescript' | 'python' | 'java' | 'csharp' | 'none';
   console?: { level?: 'error' | 'warning' | 'info' | 'debug' };
   imageResponses?: 'allow' | 'omit';
   network?: {
@@ -45,18 +48,20 @@ export type ContextConfig = {
     blockedOrigins?: string[];
   };
   outputDir?: string;
-  outputMode?: 'file' | 'stdout';
+  outputMaxSize?: number;
   saveSession?: boolean;
-  saveTrace?: boolean;
   secrets?: Record<string, string>;
+  sharedBrowserContext?: boolean;
   snapshot?: {
     mode?: 'full' | 'none';
+    boxes?: boolean;
   };
   testIdAttribute?: string;
   timeouts?: {
     action?: number;
     navigation?: number;
     expect?: number;
+    settle?: number;
   };
   browser?: {
     initScript?: string[];
@@ -104,6 +109,7 @@ export class Context {
     fileNames: string[];
     fileName: string;
   } | undefined;
+  private _recordedActions: string[] | undefined;
   private _disposables: Disposable[] = [];
 
   private _runningToolName: string | undefined;
@@ -126,6 +132,7 @@ export class Context {
 
   async dispose() {
     process.off('unhandledRejection', this._onUnhandledRejection);
+    await this.stopRecording();
     await disposeAll(this._disposables);
     for (const tab of this._tabs)
       await tab.dispose();
@@ -190,6 +197,7 @@ export class Context {
       await this.newTab();
     if (crashed)
       this._currentTab!.logErrorMessage('Page crashed and was reset to about:blank.');
+    await this._currentTab!.waitForInitialized();
     return this._currentTab!;
   }
 
@@ -230,14 +238,59 @@ export class Context {
     return [...video.fileNames];
   }
 
+  async startRecording() {
+    if (this._recordedActions)
+      throw new Error('Recording is already in progress.');
+    const browserContext = await this.ensureBrowserContext() as BrowserContextEx;
+    if (typeof browserContext._enableRecorder !== 'function')
+      throw new Error('Recording requires a newer version of Playwright, please upgrade.');
+    const recordedActions: string[] = [];
+    await browserContext._enableRecorder({
+      mode: 'recording',
+      recorderMode: 'api',
+      omitCallTracking: true,
+      language: languageGeneratorId(this.codegenLanguage()),
+    }, {
+      actionAdded: (page, action, code) => {
+        recordedActions.push(code);
+      },
+      actionUpdated: (page, action, code) => {
+        if (recordedActions.length)
+          recordedActions[recordedActions.length - 1] = code;
+        else
+          recordedActions.push(code);
+      },
+      signalAdded: (page, signal, code) => {
+        if (recordedActions.length && code)
+          recordedActions[recordedActions.length - 1] = code;
+      },
+    });
+    this._recordedActions = recordedActions;
+  }
+
+  async stopRecording(): Promise<string[] | undefined> {
+    const recordedActions = this._recordedActions;
+    if (!recordedActions)
+      return undefined;
+    this._recordedActions = undefined;
+    await (this._rawBrowserContext as BrowserContextEx)._disableRecorder();
+    return recordedActions.filter(code => code.trim()).map(dedent);
+  }
+
+  codegenLanguage(): CodegenLanguage {
+    const codegen = this.config.codegen ?? 'typescript';
+    return codegen === 'none' ? 'typescript' : codegen;
+  }
+
   private async _startPageVideo(page: playwrightTypes.Page) {
     if (!this._video)
       return;
     const suffix = this._video.fileNames.length ? `-${this._video.fileNames.length}` : '';
     let fileName = this._video.fileName;
     if (fileName && suffix) {
+      const dir = path.dirname(fileName);
       const ext = path.extname(fileName);
-      fileName = path.basename(fileName, ext) + suffix + ext;
+      fileName = path.join(dir, path.basename(fileName, ext) + suffix + ext);
     }
     this._video.fileNames.push(fileName);
     await page.screencast.start({ path: fileName, ...this._video.params });
@@ -326,19 +379,6 @@ export class Context {
     const browserContext = this._rawBrowserContext;
     await this._setupRequestInterception(browserContext);
 
-    if (this.config.saveTrace) {
-      await browserContext.tracing.start({
-        name: 'trace-' + Date.now(),
-        screenshots: true,
-        snapshots: true,
-        live: true,
-      });
-      this._disposables.push({
-        dispose: async () => {
-          await browserContext.tracing.stop();
-        },
-      });
-    }
     for (const initScript of this.config.browser?.initScript || [])
       this._disposables.push(await browserContext.addInitScript({ path: path.resolve(this.options.cwd, initScript) }));
 
@@ -358,13 +398,23 @@ export class Context {
       throw new Error(`Access to "file:" protocol is blocked. Attempted URL: "${url}"`);
   }
 
-  lookupSecret(secretName: string): { value: string, code: string } {
+  lookupSecret(secretName: string): { value: string, code: string, isSecret: boolean } {
     if (!this.config.secrets?.[secretName])
-      return { value: secretName, code: escapeWithQuotes(secretName, '\'') };
+      return { value: secretName, code: escapeWithQuotes(secretName, '\''), isSecret: false };
     return {
       value: this.config.secrets[secretName]!,
-      code: `process.env['${secretName}']`,
+      code: secretCode(this.codegenLanguage(), secretName),
+      isSecret: true,
     };
+  }
+
+  redactSecrets(text: string): string {
+    for (const [secretName, secretValue] of Object.entries(this.config.secrets ?? {})) {
+      if (!secretValue)
+        continue;
+      text = text.replaceAll(secretValue, `<secret>${secretName}</secret>`);
+    }
+    return text;
   }
 }
 

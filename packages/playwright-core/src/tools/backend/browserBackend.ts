@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+import { EventEmitter } from 'events';
+
+import * as z from 'zod';
 import debug from 'debug';
 import { Context } from './context';
 import { Response } from './response';
@@ -24,26 +27,38 @@ import type { Tool } from './tool';
 import type * as mcpServer from '../utils/mcp/server';
 import type { ClientInfo, ServerBackend } from '../utils/mcp/server';
 
-export class BrowserBackend implements ServerBackend {
+const backendDebug = debug('pw:mcp:backend');
+
+export class BrowserBackend extends EventEmitter<{ disconnected: [] }> implements ServerBackend {
   private _tools: Tool[];
   private _context: Context | undefined;
   private _sessionLog: SessionLog | undefined;
   private _config: ContextConfig;
   private _disconnected = false;
-  readonly browserContext: playwright.BrowserContext;
+  private _disposed = false;
+  private _browserContext: playwright.BrowserContext;
+  private _disposeCallback: (() => Promise<void>) | undefined;
 
-  constructor(config: ContextConfig, browserContext: playwright.BrowserContext, tools: Tool[]) {
+  constructor(config: ContextConfig, browserContext: playwright.BrowserContext, tools: Tool[], disposeCallback?: () => Promise<void>) {
+    super();
     this._config = config;
     this._tools = tools;
-    this.browserContext = browserContext;
-    const markDisconnected = () => { this._disconnected = true; };
-    this.browserContext.once('close', markDisconnected);
-    this.browserContext.browser()?.once('disconnected', markDisconnected);
+    this._browserContext = browserContext;
+    this._disposeCallback = disposeCallback;
+    const markDisconnected = () => {
+      if (this._disconnected)
+        return;
+      backendDebug('browser disconnected');
+      this._disconnected = true;
+      this.emit('disconnected');
+    };
+    this._browserContext.once('close', markDisconnected);
+    this._browserContext.browser()?.once('disconnected', markDisconnected);
   }
 
   async initialize(clientInfo: ClientInfo): Promise<void> {
     this._sessionLog = this._config.saveSession ? await SessionLog.create(this._config, clientInfo.cwd) : undefined;
-    this._context = new Context(this.browserContext, {
+    this._context = new Context(this._browserContext, {
       config: this._config,
       sessionLog: this._sessionLog,
       cwd: clientInfo.cwd,
@@ -51,10 +66,14 @@ export class BrowserBackend implements ServerBackend {
   }
 
   async dispose() {
+    if (this._disposed)
+      return;
+    this._disposed = true;
     await this._context?.dispose().catch(e => debug('pw:tools:error')(e));
+    await this._disposeCallback?.().catch(e => debug('pw:tools:error')(e));
   }
 
-  async callTool(name: string, rawArguments: mcpServer.CallToolRequest['params']['arguments'] & { _meta?: Record<string, any> } = {}, signal?: AbortSignal): Promise<mcpServer.CallToolResult & { isClose?: boolean }> {
+  async callTool(name: string, rawArguments: mcpServer.CallToolRequest['params']['arguments'] & { _meta?: Record<string, any> } = {}, signal?: AbortSignal): Promise<mcpServer.CallToolResult> {
     const json = !!rawArguments._meta?.json;
     const formatError = (message: string): mcpServer.CallToolResult => ({
       content: [{ type: 'text' as const, text: json ? JSON.stringify({ isError: true, error: message }, null, 2) : `### Error\n${message}` }],
@@ -63,8 +82,14 @@ export class BrowserBackend implements ServerBackend {
     const tool = this._tools.find(tool => tool.schema.name === name)!;
     if (!tool)
       return formatError(`Tool "${name}" not found`);
-    // eslint-disable-next-line no-restricted-syntax
-    const parsedArguments = tool.schema.inputSchema.parse(rawArguments) as any;
+    let parsedArguments: any;
+    try {
+      parsedArguments = tool.schema.inputSchema.parse(rawArguments);
+    } catch (error) {
+      if (error instanceof z.ZodError)
+        return formatError(`Invalid arguments for tool "${name}":\n${z.prettifyError(error)}`);
+      throw error;
+    }
     const cwd = rawArguments._meta?.cwd;
     const raw = !!rawArguments._meta?.raw;
     const context = this._context!;
@@ -83,8 +108,10 @@ export class BrowserBackend implements ServerBackend {
     } finally {
       context.setRunningTool(undefined);
     }
-    if (this._disconnected)
-      responseObject.isClose = true;
+    if (this._disconnected || responseObject.isClose) {
+      delete responseObject.isClose;
+      await this.dispose();
+    }
     return responseObject;
   }
 }

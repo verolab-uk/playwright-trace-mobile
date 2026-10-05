@@ -30,17 +30,36 @@ export type { NodePath, PluginObj, types as T } from '@babel/core';
 export type { BabelAPI } from '@babel/helper-plugin-utils';
 
 export type BabelPlugin = [string, any?];
-export type BabelTransformFunction = (code: string, filename: string, isModule: boolean, pluginsPrefix: BabelPlugin[], pluginsSuffix: BabelPlugin[], jsxImportSource?: string) => BabelFileResult | null;
+export type BabelTransformFunction = (code: string, filename: string, isModule: boolean, pluginsSuffix: BabelPlugin[], jsxImportSource?: string) => BabelFileResult | null;
 
-function babelTransformOptions(isTypeScript: boolean, isModule: boolean, pluginsPrologue: [string, any?][], pluginsEpilogue: [string, any?][], jsxImportSource?: string): TransformOptions {
+const nodeMajorVersion = +process.versions.node.split('.')[0];
+
+function babelTransformOptions(isTypeScript: boolean, isModule: boolean, pluginsEpilogue: [string, any?][], jsxImportSource?: string): TransformOptions {
   const plugins = [
     [require('@babel/plugin-syntax-import-attributes'), { deprecatedAssertSyntax: true }],
   ];
 
   if (isTypeScript) {
     plugins.push(
+        // Strip "declare" class fields before these plugins run:
+        // - plugin-proposal-decorators
+        // - plugin-transform-class-properties
+        // - plugin-transform-private-methods
+        // See https://github.com/microsoft/playwright/issues/38586
+        [
+          (): PluginObj => ({
+            name: 'strip-declare-class-fields',
+            visitor: {
+              Class(path) {
+                for (const member of path.get('body.body')) {
+                  if (member.isClassProperty() && member.node.declare)
+                    member.remove();
+                }
+              }
+            }
+          })
+        ],
         [require('@babel/plugin-proposal-decorators'), { version: '2023-05' }],
-        [require('@babel/plugin-transform-explicit-resource-management')],
         [require('@babel/plugin-transform-class-properties')],
         [require('@babel/plugin-transform-class-static-block')],
         [require('@babel/plugin-transform-numeric-separator')],
@@ -69,6 +88,9 @@ function babelTransformOptions(isTypeScript: boolean, isModule: boolean, plugins
           })
         ]
     );
+
+    if (nodeMajorVersion < 24)
+      plugins.push([require('@babel/plugin-transform-explicit-resource-management')]);
   }
 
   // Support JSX/TSX at all times, regardless of the file extension.
@@ -109,7 +131,6 @@ function babelTransformOptions(isTypeScript: boolean, isModule: boolean, plugins
       [require('@babel/preset-typescript'), { onlyRemoveTypeImports: false }],
     ] : [],
     plugins: [
-      ...pluginsPrologue.map(([name, options]) => [require(name), options]),
       ...plugins,
       ...pluginsEpilogue.map(([name, options]) => [require(name), options]),
     ],
@@ -124,14 +145,14 @@ function isTypeScript(filename: string) {
   return filename.endsWith('.ts') || filename.endsWith('.tsx') || filename.endsWith('.mts') || filename.endsWith('.cts');
 }
 
-export function babelTransform(code: string, filename: string, isModule: boolean, pluginsPrologue: [string, any?][], pluginsEpilogue: [string, any?][], jsxImportSource?: string): BabelFileResult | null {
+export function babelTransform(code: string, filename: string, isModule: boolean, pluginsEpilogue: [string, any?][], jsxImportSource?: string): BabelFileResult | null {
   if (isTransforming)
     return null;
 
   // Prevent reentry while requiring plugins lazily.
   isTransforming = true;
   try {
-    const options = babelTransformOptions(isTypeScript(filename), isModule, pluginsPrologue, pluginsEpilogue, jsxImportSource);
+    const options = babelTransformOptions(isTypeScript(filename), isModule, pluginsEpilogue, jsxImportSource);
     return babel.transform(code, { filename, ...options });
   } finally {
     isTransforming = false;
@@ -139,6 +160,6 @@ export function babelTransform(code: string, filename: string, isModule: boolean
 }
 
 export function babelParse(code: string, filename: string, isModule: boolean): babel.ParseResult {
-  const options = babelTransformOptions(isTypeScript(filename), isModule, [], []);
+  const options = babelTransformOptions(isTypeScript(filename), isModule, []);
   return babel.parse(code, { filename, ...options })!;
 }

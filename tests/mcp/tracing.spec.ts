@@ -45,6 +45,7 @@ test('check that trace is saved with browser_start_tracing', async ({ startClien
   const files = await fs.promises.readdir(path.join(outputDir, 'traces'));
   expect(files).toEqual([
     'resources',
+    'screencast',
     expect.stringMatching(/trace-\d+\.network/),
     expect.stringMatching(/trace-\d+\.stacks/),
     expect.stringMatching(/trace-\d+\.trace/),
@@ -78,8 +79,22 @@ test('check that trace is saved with browser_start_tracing (no output dir)', asy
   const files = await fs.promises.readdir(testInfo.outputPath('.playwright-mcp', 'traces'));
   expect(files).toEqual([
     'resources',
+    'screencast',
     expect.stringMatching(/trace-\d+\.network/),
     expect.stringMatching(/trace-\d+\.stacks/),
     expect.stringMatching(/trace-\d+\.trace/),
   ]);
+});
+
+test('browser_stop_tracing without start returns error', async ({ startClient }) => {
+  const { client } = await startClient({
+    args: ['--caps=tracing'],
+  });
+
+  expect(await client.callTool({
+    name: 'browser_stop_tracing',
+  })).toHaveResponse({
+    isError: true,
+    error: expect.stringContaining('Tracing is not started'),
+  });
 });
