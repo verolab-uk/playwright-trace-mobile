@@ -27,6 +27,7 @@ Frame:
 
     evalOnSelector:
       title: Evaluate
+      subtitle: '{selector}'
       parameters:
         selector: string
         strict: boolean?
@@ -41,6 +42,7 @@ Frame:
 
     evalOnSelectorAll:
       title: Evaluate
+      subtitle: '{selector}'
       parameters:
         selector: string
         expression: string
@@ -54,6 +56,8 @@ Frame:
 
     addScriptTag:
       title: Add script tag
+      renderParams:
+      - url
       parameters:
         url: string?
         content: string?
@@ -66,6 +70,8 @@ Frame:
 
     addStyleTag:
       title: Add style tag
+      renderParams:
+      - url
       parameters:
         url: string?
         content: string?
@@ -77,6 +83,7 @@ Frame:
 
     ariaSnapshot:
       title: Aria snapshot
+      subtitle: '{selector}'
       group: getter
       parameters:
         mode:
@@ -84,21 +91,34 @@ Frame:
           literals:
             - ai
             - default
-        # When track is present, an incremental snapshot is returned when possible.
-        track: string?
         selector: string?
         depth: int?
         boxes: boolean?
-        timeout: float
       returns:
         snapshot: string
 
+    ariaSnapshotJSON:
+      title: Aria snapshot JSON
+      subtitle: '{selector}'
+      group: getter
+      parameters:
+        mode:
+          type: enum?
+          literals:
+            - ai
+            - default
+        selector: string?
+        depth: int?
+        boxes: boolean?
+      returns:
+        snapshot: json
+
     blur:
       title: Blur
+      subtitle: '{selector}'
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -106,12 +126,19 @@ Frame:
 
     check:
       title: Check
+      subtitle: '{selector}'
+      renderParams:
+      - position
       parameters:
         selector: string
         strict: boolean?
         force: boolean?
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         position: Point?
-        timeout: float
         trial: boolean?
       flags:
         slowMo: true
@@ -122,10 +149,21 @@ Frame:
 
     click:
       title: Click
+      subtitle: '{selector}'
+      renderParams:
+      - button
+      - clickCount
+      - modifiers
+      - position
       parameters:
         selector: string
         strict: boolean?
         force: boolean?
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         noWaitAfter: boolean?
         modifiers:
           type: array?
@@ -146,7 +184,6 @@ Frame:
           - right
           - middle
         clickCount: int?
-        timeout: float
         trial: boolean?
         steps: int?
       flags:
@@ -166,11 +203,18 @@ Frame:
 
     dragAndDrop:
       title: Drag and drop
+      renderParams:
+      - source:selector
+      - target:selector
       parameters:
         source: string
         target: string
         force: boolean?
-        timeout: float
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         trial: boolean?
         sourcePosition: Point?
         targetPosition: Point?
@@ -185,6 +229,7 @@ Frame:
 
     drop:
       title: Drop files or data onto an element
+      subtitle: '{selector}'
       parameters:
         selector: string
         strict: boolean?
@@ -211,7 +256,6 @@ Frame:
             properties:
               mimeType: string
               value: string
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -221,10 +265,20 @@ Frame:
 
     dblclick:
       title: Double click
+      subtitle: '{selector}'
+      renderParams:
+      - button
+      - modifiers
+      - position
       parameters:
         selector: string
         strict: boolean?
         force: boolean?
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         modifiers:
           type: array?
           items:
@@ -243,7 +297,6 @@ Frame:
           - left
           - right
           - middle
-        timeout: float
         trial: boolean?
         steps: int?
       flags:
@@ -255,12 +308,14 @@ Frame:
 
     dispatchEvent:
       title: Dispatch "{type}"
+      subtitle: '{selector}'
+      renderParams:
+      - type
       parameters:
         selector: string
         strict: boolean?
         type: string
         eventInit: SerializedArgument
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -292,12 +347,14 @@ Frame:
 
     fill:
       title: Fill "{value}"
+      subtitle: '{selector}'
+      renderParams:
+      - value
       parameters:
         selector: string
         strict: boolean?
         value: string
         force: boolean?
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -307,10 +364,10 @@ Frame:
 
     focus:
       title: Focus
+      subtitle: '{selector}'
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -342,12 +399,12 @@ Frame:
 
     getAttribute:
       title: Get attribute "{name}"
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
         name: string
-        timeout: float
       returns:
         value: string?
       flags:
@@ -355,10 +412,12 @@ Frame:
         pause: true
 
     goto:
-      title: Navigate to "{url}"
+      title: Navigate
+      subtitle: '{url}'
+      renderParams:
+      - url
       parameters:
         url: string
-        timeout: float
         waitUntil: LifecycleEvent?
         referer: string?
       returns:
@@ -370,10 +429,19 @@ Frame:
 
     hover:
       title: Hover
+      subtitle: '{selector}'
+      renderParams:
+      - modifiers
+      - position
       parameters:
         selector: string
         strict: boolean?
         force: boolean?
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         modifiers:
           type: array?
           items:
@@ -385,7 +453,6 @@ Frame:
             - Meta
             - Shift
         position: Point?
-        timeout: float
         trial: boolean?
       flags:
         slowMo: true
@@ -396,11 +463,11 @@ Frame:
 
     innerHTML:
       title: Get HTML
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: string
       flags:
@@ -409,11 +476,11 @@ Frame:
 
     innerText:
       title: Get inner text
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: string
       flags:
@@ -422,11 +489,11 @@ Frame:
 
     inputValue:
       title: Get input value
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: string
       flags:
@@ -435,11 +502,11 @@ Frame:
 
     isChecked:
       title: Is checked
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: boolean
       flags:
@@ -448,11 +515,11 @@ Frame:
 
     isDisabled:
       title: Is disabled
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: boolean
       flags:
@@ -461,11 +528,11 @@ Frame:
 
     isEnabled:
       title: Is enabled
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: boolean
       flags:
@@ -474,6 +541,7 @@ Frame:
 
     isHidden:
       title: Is hidden
+      subtitle: '{selector}'
       group: getter
       parameters:
         # Note: compared to other isFoo methods, isHidden is a one-shot operation without a timeout.
@@ -487,6 +555,7 @@ Frame:
 
     isVisible:
       title: Is visible
+      subtitle: '{selector}'
       group: getter
       parameters:
         # Note: compared to other isFoo methods, isVisible is a one-shot operation without a timeout.
@@ -500,11 +569,11 @@ Frame:
 
     isEditable:
       title: Is editable
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: boolean
       flags:
@@ -513,13 +582,15 @@ Frame:
 
     press:
       title: Press "{key}"
+      subtitle: '{selector}'
+      renderParams:
+      - key
       parameters:
         selector: string
         strict: boolean?
         key: string
         delay: float?
         noWaitAfter: boolean?
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -529,6 +600,7 @@ Frame:
 
     querySelector:
       title: Query selector
+      subtitle: '{selector}'
       parameters:
         selector: string
         strict: boolean?
@@ -539,6 +611,7 @@ Frame:
 
     querySelectorAll:
       title: Query selector all
+      subtitle: '{selector}'
       parameters:
         selector: string
       returns:
@@ -550,6 +623,7 @@ Frame:
 
     queryCount:
       title: Query count
+      subtitle: '{selector}'
       parameters:
         selector: string
       returns:
@@ -560,6 +634,9 @@ Frame:
 
     selectOption:
       title: Select option
+      subtitle: '{selector}'
+      renderParams:
+      - options
       parameters:
         selector: string
         strict: boolean?
@@ -576,7 +653,6 @@ Frame:
               label: string?
               index: int?
         force: boolean?
-        timeout: float
       returns:
         values:
           type: array
@@ -592,7 +668,6 @@ Frame:
       title: Set content
       parameters:
         html: string
-        timeout: float
         waitUntil: LifecycleEvent?
       flags:
         snapshot: true
@@ -600,6 +675,9 @@ Frame:
 
     setInputFiles:
       title: Set input files
+      subtitle: '{selector}'
+      renderParams:
+      - files=localPaths
       parameters:
         selector: string
         strict: boolean?
@@ -620,7 +698,6 @@ Frame:
         streams:
           type: array?
           items: WritableStream
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -630,10 +707,19 @@ Frame:
 
     tap:
       title: Tap
+      subtitle: '{selector}'
+      renderParams:
+      - modifiers
+      - position
       parameters:
         selector: string
         strict: boolean?
         force: boolean?
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         modifiers:
           type: array?
           items:
@@ -645,7 +731,6 @@ Frame:
             - Meta
             - Shift
         position: Point?
-        timeout: float
         trial: boolean?
       flags:
         slowMo: true
@@ -656,11 +741,11 @@ Frame:
 
     textContent:
       title: Get text content
+      subtitle: '{selector}'
       group: getter
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
       returns:
         value: string?
       flags:
@@ -675,12 +760,14 @@ Frame:
 
     type:
       title: Type "{text}"
+      subtitle: '{selector}'
+      renderParams:
+      - text
       parameters:
         selector: string
         strict: boolean?
         text: string
         delay: float?
-        timeout: float
       flags:
         slowMo: true
         snapshot: true
@@ -690,12 +777,19 @@ Frame:
 
     uncheck:
       title: Uncheck
+      subtitle: '{selector}'
+      renderParams:
+      - position
       parameters:
         selector: string
         strict: boolean?
         force: boolean?
+        scroll:
+          type: enum?
+          literals:
+          - auto
+          - none
         position: Point?
-        timeout: float
         trial: boolean?
       flags:
         slowMo: true
@@ -706,6 +800,8 @@ Frame:
 
     waitForTimeout:
       title: Wait for timeout
+      renderParams:
+      - timeout=waitTimeout
       parameters:
         waitTimeout: float
       flags:
@@ -713,25 +809,31 @@ Frame:
 
     waitForFunction:
       title: Wait for function
+      subtitle: '{selector}'
       parameters:
         expression: string
         isFunction: boolean?
         arg: SerializedArgument
-        timeout: float
         # When present, polls on interval. Otherwise, polls on raf.
         pollingInterval: float?
+        # When present, first argument is the matched element.
+        selector: string?
+        strict: boolean?
       returns:
-        handle: JSHandle
+        # Missing when "selector" is present.
+        handle: JSHandle?
       flags:
         snapshot: true
         pause: true
 
     waitForSelector:
       title: Wait for selector
+      subtitle: '{selector}'
+      renderParams:
+      - state
       parameters:
         selector: string
         strict: boolean?
-        timeout: float
         state:
           type: enum?
           literals:
@@ -747,6 +849,7 @@ Frame:
 
     expect:
       title: Expect "{expression}"
+      subtitle: '{selector}'
       parameters:
         selector: string?
         expression: string
@@ -763,19 +866,14 @@ Frame:
         expectedValue: SerializedArgument?
         useInnerText: boolean?
         isNot: boolean
-        timeout: float
-      returns:
-        matches: boolean
+      errorDetails:
         received:
           type: object?
           properties:
             value: SerializedValue?
             ariaSnapshot: string?
         timedOut: boolean?
-        errorMessage: string?
-        log:
-          type: array?
-          items: string
+        customErrorMessage: string?
       flags:
         snapshot: true
         pause: true

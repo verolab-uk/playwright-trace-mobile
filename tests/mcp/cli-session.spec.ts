@@ -268,7 +268,7 @@ test('older client with newer daemon - list shows incompatible warning', async (
 test.describe('browser server', () => {
   test.beforeEach(async ({ mcpBrowser }, testInfo) => {
     test.skip(!['chrome', 'chromium', 'webkit', 'firefox'].includes(mcpBrowser));
-    process.env.PLAYWRIGHT_SERVER_REGISTRY = testInfo.outputPath('registry');
+    process.env.PWTEST_SERVER_REGISTRY = testInfo.outputPath('registry');
   });
 
   test('list browser servers', async ({ cli, mcpBrowser }) => {
@@ -293,7 +293,7 @@ workspace1:
     await page.setContent('<title>My Page</title>');
     const { output: openOutput } = await cli('attach', 'foobar');
     expect(openOutput).toContain('### Session `foobar` created, attached to `foobar`.');
-    expect(openOutput).toContain('Run commands with: playwright-cli --s=foobar <command>');
+    expect(openOutput).toContain('Run commands with: playwright-cli -s=foobar <command>');
     const { output: listOutput } = await cli('list', '--all');
     expect(listOutput).toBe(`### Browsers
 /:
@@ -326,7 +326,7 @@ workspace1:
     await page.setContent('<title>Alias Page</title>');
     const { output: openOutput } = await cli('attach', 'foobar', '--session=mybrowser');
     expect(openOutput).toContain('### Session `mybrowser` created, attached to `foobar`.');
-    expect(openOutput).toContain('Run commands with: playwright-cli --s=mybrowser <command>');
+    expect(openOutput).toContain('Run commands with: playwright-cli -s=mybrowser <command>');
     await cli('-s', 'mybrowser', 'close');
   });
 

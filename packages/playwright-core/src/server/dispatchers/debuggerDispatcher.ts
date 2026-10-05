@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-import { renderTitleForCall } from '@isomorphic/protocolFormatter';
+import { renderFullTitleForCall } from '@isomorphic/protocolFormatter';
 import { Dispatcher } from './dispatcher';
 import { Debugger } from '../debugger';
 
 import type { BrowserContextDispatcher } from './browserContextDispatcher';
-import type * as channels from '@protocol/channels';
-import type { Progress } from '@protocol/progress';
+import type { ApiCallUpdate } from '../debugger';
+import type * as channels from '../channels';
+import type { Progress } from '../progress';
 
 export class DebuggerDispatcher extends Dispatcher<Debugger, channels.DebuggerChannel, BrowserContextDispatcher> implements channels.DebuggerChannel {
-  _type_EventTarget = true;
   _type_Debugger = true;
 
   static from(scope: BrowserContextDispatcher, debugger_: Debugger): DebuggerDispatcher {
@@ -36,6 +36,9 @@ export class DebuggerDispatcher extends Dispatcher<Debugger, channels.DebuggerCh
     this.addObjectListener(Debugger.Events.PausedStateChanged, () => {
       this._dispatchEvent('pausedStateChanged', { pausedDetails: this._serializePausedDetails() });
     });
+    this.addObjectListener(Debugger.Events.ApiCallsUpdated, (apiCalls: ApiCallUpdate[]) => {
+      this._dispatchEvent('apiCallsUpdated', { apiCalls });
+    });
     this._dispatchEvent('pausedStateChanged', { pausedDetails: this._serializePausedDetails() });
   }
 
@@ -43,14 +46,14 @@ export class DebuggerDispatcher extends Dispatcher<Debugger, channels.DebuggerCh
     const details = this._object.pausedDetails();
     if (!details)
       return undefined;
-    const { metadata } = details;
+    const { metadata, sdkObject } = details;
     return {
       location: {
         file: metadata.location?.file ?? '<unknown>',
         line: metadata.location?.line,
         column: metadata.location?.column,
       },
-      title: renderTitleForCall(metadata),
+      title: renderFullTitleForCall(metadata, sdkObject.attribution.playwright.options.sdkLanguage),
     };
   }
 
@@ -68,5 +71,9 @@ export class DebuggerDispatcher extends Dispatcher<Debugger, channels.DebuggerCh
 
   async runTo(params: channels.DebuggerRunToParams, progress: Progress): Promise<void> {
     this._object.runTo(progress, params.location);
+  }
+
+  async enable(params: channels.DebuggerEnableParams, progress: Progress): Promise<void> {
+    this._object.enableApiCalls();
   }
 }

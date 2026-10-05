@@ -17,7 +17,8 @@
 import { test, expect } from '@playwright/test';
 import { SnapshotRenderer } from '../../packages/isomorphic/trace/snapshotRenderer';
 import { LRUCache } from '../../packages/isomorphic/lruCache';
-import type { FrameSnapshot } from '../../packages/trace/src/snapshot';
+import { stripAnsiEscapes } from '../../packages/isomorphic/stringUtils';
+import type { FrameSnapshot } from '../../packages/isomorphic/trace/trace';
 
 function makeSnapshot(overrides: Partial<FrameSnapshot> = {}): FrameSnapshot {
   return {
@@ -42,10 +43,23 @@ for (const [name, overrides] of [
   test(`snapshot renderer escapes attacker-controlled ${name} in script context`, () => {
     const renderer = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot(overrides)], [], 0);
     const { html } = renderer.render();
-    expect(html.match(/<script>/g)).toHaveLength(1);
+    expect(html.match(/<script[ >]/g)).toHaveLength(1);
     expect(html.match(/<\/script>/g)).toHaveLength(1);
   });
 }
+
+test('snapshot renderer nonces the bootstrap script', () => {
+  const renderer = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot()], [], 0);
+  const { html, scriptNonce } = renderer.render();
+  expect(scriptNonce).toMatch(/^[0-9a-f]{32}$/);
+  expect(html).toContain(`<script nonce="${scriptNonce}">`);
+  // The html is cached, so repeated renders must keep returning the nonce that is
+  // baked into it - it is sent back in the Content-Security-Policy header.
+  expect(renderer.render().scriptNonce).toBe(scriptNonce);
+  // A different snapshot gets a different nonce.
+  const other = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot()], [], 0);
+  expect(other.render().scriptNonce).not.toBe(scriptNonce);
+});
 
 test('snapshot renderer strips event handler attributes', () => {
   const renderer = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot({
@@ -84,6 +98,24 @@ test('snapshot renderer neutralizes iframe sandbox', () => {
   expect(html).toContain('__playwright_sandbox__');
 });
 
+test('snapshot renderer neutralizes object data attribute', () => {
+  const renderer = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot({
+    html: ['HTML', {}, ['BODY', {}, ['OBJECT', { 'data': '/sha1/malicious', 'type': 'text/html' }]]],
+  })], [], 0);
+  const { html } = renderer.render();
+  expect(html).not.toContain(' data=');
+  expect(html).toContain('__playwright_data__');
+});
+
+test('snapshot renderer neutralizes embed src attribute', () => {
+  const renderer = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot({
+    html: ['HTML', {}, ['BODY', {}, ['EMBED', { 'src': '/sha1/malicious', 'type': 'text/html' }]]],
+  })], [], 0);
+  const { html } = renderer.render();
+  expect(html).not.toContain(' src=');
+  expect(html).toContain('__playwright_src__');
+});
+
 test('snapshot renderer handles case-insensitive iframe tag names', () => {
   const renderer = new SnapshotRenderer(new LRUCache(1_000_000), [], [makeSnapshot({
     html: ['HTML', {}, ['BODY', {}, ['iframe', { 'srcdoc': '<script>alert(1)</script>', 'src': 'http://evil.com' }]]],
@@ -92,4 +124,22 @@ test('snapshot renderer handles case-insensitive iframe tag names', () => {
   expect(html).not.toContain(' srcdoc=');
   expect(html).toContain('__playwright_srcdoc__');
   expect(html).toContain('__playwright_src__');
+});
+
+test('stripAnsiEscapes should not exhibit polynomial backtracking', () => {
+  // \x1b[ + 50000 semicolons + non-terminal character.
+  // Before the fix this took >3 seconds due to O(n^2) backtracking.
+  const payload = '\x1b[' + ';'.repeat(50000) + '!';
+  const result = stripAnsiEscapes(payload);
+  // The ESC[ prefix is not a complete ANSI sequence, so it stays in the output.
+  expect(result).toContain('!');
+});
+
+test('stripAnsiEscapes handles common ANSI sequences after fix', () => {
+  expect(stripAnsiEscapes('\x1b[31mred\x1b[0m')).toBe('red');
+  expect(stripAnsiEscapes('\x1b[0;31mbold red\x1b[0m')).toBe('bold red');
+  expect(stripAnsiEscapes('\x1b[;H')).toBe('');
+  expect(stripAnsiEscapes('\x1b[2J')).toBe('');
+  expect(stripAnsiEscapes('\x1b[38;2;255;0;0mcolored\x1b[0m')).toBe('colored');
+  expect(stripAnsiEscapes('hello\x1b[32mworld\x1b[0m!')).toBe('helloworld!');
 });

@@ -22,8 +22,10 @@ import crypto from 'crypto';
 import debug from 'debug';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isUnderTest } from '@utils/debug';
 import { urlHostFromAddress } from '@utils/httpServer';
 import { createHttpServer, startHttpServer } from '@utils/network';
+import { ManualPromise } from '@isomorphic/manualPromise';
 
 import * as mcpServer from './server';
 
@@ -81,14 +83,7 @@ async function installHttpTransport(httpServer: http.Server, serverBackendFactor
     }
 
     const url = new URL(`http://localhost${req.url}`);
-    if (url.pathname === '/killkillkill') {
-      // Require POST plus a custom header to prevent cross-origin CSRF
-      // (a browser-coerced <img> GET or simple <form> POST can't add custom headers,
-      // and any cross-origin request with custom headers is blocked by CORS preflight).
-      if (req.method !== 'POST' || req.headers['x-pw-mcp-kill'] !== '1') {
-        res.statusCode = 405;
-        return res.end();
-      }
+    if (url.pathname === '/killkillkill' && isUnderTest()) {
       res.statusCode = 200;
       res.end('Killing process');
       // Simulate Ctrl+C in a way that works on Windows too.
@@ -123,7 +118,7 @@ async function handleSSE(serverBackendFactory: ServerBackendFactory, req: http.I
     const transport = new SSEServerTransport('/sse', res);
     sessions.set(transport.sessionId, transport);
     testDebug(`create SSE session`);
-    await mcpServer.connect(serverBackendFactory, transport, false);
+    await mcpServer.connect(serverBackendFactory, transport, Promise.resolve(), false);
     res.on('close', () => {
       testDebug(`delete SSE session`);
       sessions.delete(transport.sessionId);
@@ -135,16 +130,22 @@ async function handleSSE(serverBackendFactory: ServerBackendFactory, req: http.I
   res.end('Method not allowed');
 }
 
-async function handleStreamable(serverBackendFactory: ServerBackendFactory, req: http.IncomingMessage, res: http.ServerResponse, sessions: Map<string, StreamableHTTPServerTransportType>) {
+async function handleStreamable(serverBackendFactory: ServerBackendFactory, req: http.IncomingMessage, res: http.ServerResponse, sessions: Map<string, { transport: StreamableHTTPServerTransportType, transportInitialized: ManualPromise<void> }>) {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (sessionId) {
-    const transport = sessions.get(sessionId);
-    if (!transport) {
+    const sessionInfo = sessions.get(sessionId);
+    if (!sessionInfo) {
       res.statusCode = 404;
       res.end('Session not found');
       return;
     }
-    return await transport.handleRequest(req, res);
+    if (req.method === 'GET') {
+      // As per spec, GET is for the event stream only, when we see it consider transport bidirectionally ready.
+      const streamResponse = sessionInfo.transport.handleRequest(req, res);
+      sessionInfo.transportInitialized.resolve();
+      return streamResponse;
+    }
+    return sessionInfo.transport.handleRequest(req, res);
   }
 
   if (req.method === 'POST') {
@@ -152,8 +153,9 @@ async function handleStreamable(serverBackendFactory: ServerBackendFactory, req:
       sessionIdGenerator: () => crypto.randomUUID(),
       onsessioninitialized: async sessionId => {
         testDebug(`create http session`);
-        await mcpServer.connect(serverBackendFactory, transport, true);
-        sessions.set(sessionId, transport);
+        const sessionInfo = { transport, transportInitialized: new ManualPromise<void>() };
+        sessions.set(sessionId, sessionInfo);
+        await mcpServer.connect(serverBackendFactory, sessionInfo.transport, sessionInfo.transportInitialized, true);
       }
     });
 

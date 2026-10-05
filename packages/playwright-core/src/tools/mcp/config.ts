@@ -43,7 +43,7 @@ export type CLIOptions = {
   cdpEndpoint?: string;
   cdpHeader?: Record<string, string>;
   cdpTimeout?: number;
-  codegen?: 'typescript' | 'none';
+  codegen?: 'typescript' | 'python' | 'java' | 'csharp' | 'none';
   config?: string;
   consoleLevel?: 'error' | 'warning' | 'info' | 'debug';
   device?: string;
@@ -58,33 +58,46 @@ export type CLIOptions = {
   initPage?: string[];
   isolated?: boolean;
   imageResponses?: 'allow' | 'omit';
+  mobile?: boolean;
   sandbox?: boolean;
   outputDir?: string;
+  outputMaxSize?: number;
   port?: number;
+  profileDirName?: string;
   proxyBypass?: string;
   proxyServer?: string;
+  remoteHeader?: Record<string, string>;
   saveSession?: boolean;
   secrets?: Record<string, string>;
   sharedBrowserContext?: boolean;
+  snapshotBoxes?: boolean;
   snapshotMode?: 'full' | 'none';
   storageState?: string;
   testIdAttribute?: string;
   timeoutAction?: number;
   timeoutNavigation?: number;
+  timeoutSettle?: number;
   userAgent?: string;
   userDataDir?: string;
   viewportSize?: ViewportSize;
 };
+
+export const defaultCodegenLanguage: 'typescript' | 'python' | 'java' | 'csharp' =
+  process.env.PW_LANG_NAME === 'python' || process.env.PW_LANG_NAME === 'java' || process.env.PW_LANG_NAME === 'csharp'
+    ? process.env.PW_LANG_NAME
+    : 'typescript';
 
 const defaultConfig: MergedConfig = {
   browser: {
     launchOptions: {},
     contextOptions: {},
   },
+  codegen: defaultCodegenLanguage,
   timeouts: {
     action: 5000,
     navigation: 60000,
     expect: 5000,
+    settle: 500,
   },
 };
 
@@ -153,7 +166,9 @@ export async function resolveCLIConfigForCLI(daemonProfilesDir: string, sessionN
     cdpEndpoint: options.cdp,
     config: options.config,
     browser: options.browser,
+    device: options.device,
     headless: options.headed ? false : undefined,
+    mobile: options.mobile,
     extension: options.extension,
     userDataDir: options.profile,
     snapshotMode: 'full',
@@ -194,11 +209,12 @@ export async function resolveCLIConfigForCLI(daemonProfilesDir: string, sessionN
   return { ...result, browser, configFile, skillMode: true };
 }
 
-export function resolveExtensionOptions(cliOptions: CLIOptions): { channel: string, executablePath?: string } {
+export function resolveExtensionOptions(cliOptions: CLIOptions): { channel: string, executablePath?: string, profileDirName?: string } {
   const browser = cliOptions.browser ?? envToString(process.env.PLAYWRIGHT_MCP_BROWSER);
   const { channel } = resolveBrowserParam(browser);
   const executablePath = cliOptions.executablePath ?? envToString(process.env.PLAYWRIGHT_MCP_EXECUTABLE_PATH);
-  return { channel: channel ?? 'chrome', executablePath };
+  const profileDirName = cliOptions.profileDirName ?? envToString(process.env.PLAYWRIGHT_MCP_PROFILE_DIR_NAME);
+  return { channel: channel ?? 'chrome', executablePath, profileDirName };
 }
 
 async function validateBrowserConfig(browser: MergedConfig['browser']): Promise<FullConfig['browser']> {
@@ -210,11 +226,14 @@ async function validateBrowserConfig(browser: MergedConfig['browser']): Promise<
       browser.launchOptions.channel = 'chrome';
   }
 
-  if (browser.browserName === 'chromium' && browser.launchOptions.chromiumSandbox === undefined) {
-    if (process.platform === 'linux')
-      browser.launchOptions.chromiumSandbox = browser.launchOptions.channel !== 'chromium' && browser.launchOptions.channel !== 'chrome-for-testing';
-    else
+  if (browserName === 'chromium' && browser.launchOptions.chromiumSandbox === undefined) {
+    if (process.platform === 'linux') {
+      // Downloaded chromium builds (undefined channel, 'chromium', 'chrome-for-testing') lack the setuid sandbox helper on linux.
+      const { channel } = browser.launchOptions;
+      browser.launchOptions.chromiumSandbox = channel !== undefined && channel !== 'chromium' && channel !== 'chrome-for-testing';
+    } else {
       browser.launchOptions.chromiumSandbox = true;
+    }
   }
 
   if (browser.isolated && browser.userDataDir)
@@ -263,6 +282,10 @@ function resolveBrowserParam(browserOption: string | undefined): { browserName?:
       return { browserName: 'chromium', channel: 'chrome-for-testing' };
     case 'firefox':
       return { browserName: 'firefox' };
+    case 'moz-firefox':
+    case 'moz-firefox-beta':
+    case 'moz-firefox-nightly':
+      return { browserName: 'firefox', channel: browserOption };
     case 'webkit':
       return { browserName: 'webkit' };
     default:
@@ -285,11 +308,20 @@ function configFromCLIOptions(cliOptions: CLIOptions): Config & { configFile?: s
   if (cliOptions.sandbox !== undefined)
     launchOptions.chromiumSandbox = cliOptions.sandbox;
 
-  if (cliOptions.device && cliOptions.cdpEndpoint)
+  let device = cliOptions.device;
+  if (cliOptions.mobile) {
+    if (device)
+      throw new Error('Cannot use --mobile together with --device, pick one.');
+    if (browserName === 'firefox')
+      throw new Error('--mobile is not supported with the Firefox browser.');
+    device = browserName === 'webkit' ? 'iPhone 17' : 'Pixel 10';
+  }
+
+  if (device && cliOptions.cdpEndpoint)
     throw new Error('Device emulation is not supported with cdpEndpoint.');
 
   // Context options
-  const contextOptions: playwrightTypes.BrowserContextOptions = cliOptions.device ? playwright.devices[cliOptions.device] : {};
+  const contextOptions: playwrightTypes.BrowserContextOptions = device ? playwright.devices[device] : {};
 
   if (cliOptions.proxyServer) {
     const proxy: playwrightTypes.LaunchOptions['proxy'] = { server: cliOptions.proxyServer };
@@ -352,15 +384,22 @@ function configFromCLIOptions(cliOptions: CLIOptions): Config & { configFile?: s
     saveSession: cliOptions.saveSession,
     secrets: cliOptions.secrets,
     sharedBrowserContext: cliOptions.sharedBrowserContext,
-    snapshot: cliOptions.snapshotMode ? { mode: cliOptions.snapshotMode } : undefined,
+    snapshot: cliOptions.snapshotMode || cliOptions.snapshotBoxes !== undefined ? { mode: cliOptions.snapshotMode, boxes: cliOptions.snapshotBoxes } : undefined,
     outputDir: cliOptions.outputDir,
+    outputMaxSize: cliOptions.outputMaxSize,
     imageResponses: cliOptions.imageResponses,
     testIdAttribute: cliOptions.testIdAttribute,
     timeouts: {
       action: cliOptions.timeoutAction,
       navigation: cliOptions.timeoutNavigation,
+      settle: cliOptions.timeoutSettle,
     },
   };
+
+  // `remoteHeaders` is for back-compat, assign it here so it survives config merging.
+  if (cliOptions.remoteHeader)
+    // eslint-disable-next-line no-restricted-syntax
+    (config.browser as any).remoteHeaders = cliOptions.remoteHeader;
 
   return { ...config, configFile: cliOptions.config };
 }
@@ -378,6 +417,8 @@ export function configFromEnv(env?: NodeJS.ProcessEnv): Config & { configFile?: 
   options.cdpEndpoint = envToString(e.PLAYWRIGHT_MCP_CDP_ENDPOINT);
   options.cdpHeader = headerParser(envToString(e.PLAYWRIGHT_MCP_CDP_HEADERS));
   options.cdpTimeout = numberParser(e.PLAYWRIGHT_MCP_CDP_TIMEOUT);
+  if (e.PLAYWRIGHT_MCP_CODEGEN)
+    options.codegen = enumParser<'typescript' | 'python' | 'java' | 'csharp' | 'none'>('--codegen', ['none', 'typescript', 'python', 'java', 'csharp'], e.PLAYWRIGHT_MCP_CODEGEN);
   options.config = envToString(e.PLAYWRIGHT_MCP_CONFIG);
   if (e.PLAYWRIGHT_MCP_CONSOLE_LEVEL)
     options.consoleLevel = enumParser<'error' | 'warning' | 'info' | 'debug'>('--console-level', ['error', 'warning', 'info', 'debug'], e.PLAYWRIGHT_MCP_CONSOLE_LEVEL);
@@ -397,16 +438,20 @@ export function configFromEnv(env?: NodeJS.ProcessEnv): Config & { configFile?: 
   options.isolated = envToBoolean(e.PLAYWRIGHT_MCP_ISOLATED);
   if (e.PLAYWRIGHT_MCP_IMAGE_RESPONSES)
     options.imageResponses = enumParser<'allow' | 'omit'>('--image-responses', ['allow', 'omit'], e.PLAYWRIGHT_MCP_IMAGE_RESPONSES);
+  options.mobile = envToBoolean(e.PLAYWRIGHT_MCP_MOBILE);
   options.sandbox = envToBoolean(e.PLAYWRIGHT_MCP_SANDBOX);
   options.outputDir = envToString(e.PLAYWRIGHT_MCP_OUTPUT_DIR);
+  options.outputMaxSize = numberParser(e.PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE);
   options.port = numberParser(e.PLAYWRIGHT_MCP_PORT);
   options.proxyBypass = envToString(e.PLAYWRIGHT_MCP_PROXY_BYPASS);
   options.proxyServer = envToString(e.PLAYWRIGHT_MCP_PROXY_SERVER);
+  options.remoteHeader = headerParser(envToString(e.PLAYWRIGHT_MCP_REMOTE_HEADERS));
   options.secrets = dotenvFileLoader(e.PLAYWRIGHT_MCP_SECRETS_FILE);
   options.storageState = envToString(e.PLAYWRIGHT_MCP_STORAGE_STATE);
   options.testIdAttribute = envToString(e.PLAYWRIGHT_MCP_TEST_ID_ATTRIBUTE);
   options.timeoutAction = numberParser(e.PLAYWRIGHT_MCP_TIMEOUT_ACTION);
   options.timeoutNavigation = numberParser(e.PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION);
+  options.timeoutSettle = numberParser(e.PLAYWRIGHT_MCP_TIMEOUT_SETTLE);
   options.userAgent = envToString(e.PLAYWRIGHT_MCP_USER_AGENT);
   options.userDataDir = envToString(e.PLAYWRIGHT_MCP_USER_DATA_DIR);
   options.viewportSize = resolutionParser('--viewport-size', e.PLAYWRIGHT_MCP_VIEWPORT_SIZE);
@@ -420,10 +465,16 @@ export async function loadConfig(configFile: string | undefined): Promise<Config
   if (configFile.endsWith('.ini'))
     return configFromIniFile(configFile);
 
+  const raw = await fs.promises.readFile(configFile, 'utf8');
+  const data = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
   try {
-    const data = await fs.promises.readFile(configFile, 'utf8');
-    return JSON.parse(data.charCodeAt(0) === 0xFEFF ? data.slice(1) : data);
-  } catch {
+    return JSON.parse(data);
+  } catch (jsonError) {
+    // A JSON config is always an object, so JSON-looking input must surface its
+    // parse error rather than silently falling back to INI (and the default
+    // config). A leading `[` stays with INI — it is a `[section]` header there.
+    if (/^\s*\{/.test(data))
+      throw jsonError;
     return configFromIniFile(configFile);
   }
 }
@@ -462,7 +513,9 @@ function mergeConfig(base: MergedConfig, overrides: Config): MergedConfig {
     },
   };
 
-  if (browser.browserName !== 'chromium' && browser.launchOptions)
+  // Firefox supports the `moz-firefox*` channels via WebDriver BiDi, so keep
+  // those; otherwise channels are a Chromium-only concept and should be dropped.
+  if (browser.browserName !== 'chromium' && browser.launchOptions && !browser.launchOptions.channel?.startsWith('moz-'))
     delete browser.launchOptions.channel;
 
   return {

@@ -30,15 +30,16 @@ import { CRPage } from './crPage';
 import { saveProtocolStream } from './crProtocolHelper';
 import { CRServiceWorker } from './crServiceWorker';
 
-import type { InitScript, Worker } from '../page';
+import type { InitScript } from '../page';
 import type { ConnectionTransport } from '../transport';
 import type * as types from '../types';
+import type { HttpCredentials } from '@protocol/structs';
 import type { CDPSession, CRSession } from './crConnection';
 import type { CRDevTools } from './crDevTools';
 import type { Protocol } from './protocol';
 import type { BrowserOptions } from '../browser';
 import type { SdkObject } from '../instrumentation';
-import type * as channels from '@protocol/channels';
+import type * as channels from '../channels';
 
 export class CRBrowser extends Browser {
   readonly _connection: CRConnection;
@@ -63,7 +64,7 @@ export class CRBrowser extends Browser {
     const browser = new CRBrowser(parent, connection, options);
     browser._devtools = devtools;
     if (browser.isClank())
-      browser._isCollocatedWithServer = false;
+      browser._isBrowserCollocatedWithServer = false;
     const session = connection.rootSession;
     if ((options as any).__testHookOnConnectToBrowser)
       await (options as any).__testHookOnConnectToBrowser();
@@ -496,9 +497,10 @@ export class CRBrowserContext extends BrowserContext<CREventsMap> {
 
   async setUserAgent(userAgent: string | undefined): Promise<void> {
     this._options.userAgent = userAgent;
-    for (const page of this.pages())
-      await (page.delegate as CRPage).updateUserAgent();
-    // TODO: service workers don't have Emulation domain?
+    await Promise.all([
+      ...this.pages().map(page => (page.delegate as CRPage).updateUserAgent()),
+      ...this.serviceWorkers().map(sw => sw.updateUserAgent()),
+    ]);
   }
 
   async doUpdateOffline(): Promise<void> {
@@ -508,7 +510,7 @@ export class CRBrowserContext extends BrowserContext<CREventsMap> {
       await (sw as CRServiceWorker).updateOffline();
   }
 
-  async doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
+  async doSetHTTPCredentials(httpCredentials?: HttpCredentials[]): Promise<void> {
     this._options.httpCredentials = httpCredentials;
     for (const page of this.pages())
       await (page.delegate as CRPage).updateHttpCredentials();
@@ -575,9 +577,6 @@ export class CRBrowserContext extends BrowserContext<CREventsMap> {
     }
   }
 
-  onClosePersistent() {
-  }
-
   override async clearCache(): Promise<void> {
     for (const page of this._crPages())
       await page._networkManager.clearCache();
@@ -593,7 +592,7 @@ export class CRBrowserContext extends BrowserContext<CREventsMap> {
     });
   }
 
-  serviceWorkers(): Worker[] {
+  serviceWorkers(): CRServiceWorker[] {
     return Array.from(this._browser._serviceWorkers.values()).filter(serviceWorker => serviceWorker.browserContext === this);
   }
 

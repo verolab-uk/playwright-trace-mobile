@@ -42,7 +42,7 @@ export class Session {
     return compareSemver(clientInfo.version, this.config.version) >= 0;
   }
 
-  async run(clientInfo: ClientInfo, args: MinimistArgs, options?: { raw?: boolean, json?: boolean }): Promise<{ text: string }> {
+  async run(clientInfo: ClientInfo, args: MinimistArgs, options?: { raw?: boolean, json?: boolean }): Promise<{ text: string, isError?: boolean }> {
     if (!this.isCompatible(clientInfo))
       throw new Error(`Client is v${clientInfo.version}, session '${this.name}' is v${this.config.version}. Run\n\n  playwright-cli${this.name !== 'default' ? ` -s=${this.name}` : ''} open\n\nto restart the browser session.`);
 
@@ -125,8 +125,10 @@ export class Session {
     ];
     if (cliArgs.headed)
       args.push('--headed');
-    if (cliArgs.extension)
-      args.push('--extension');
+    if (cliArgs.mobile)
+      args.push('--mobile');
+    if (cliArgs.device)
+      args.push(`--device=${cliArgs.device}`);
     if (cliArgs.browser)
       args.push(`--browser=${cliArgs.browser}`);
     if (cliArgs.persistent)
@@ -135,17 +137,18 @@ export class Session {
       args.push(`--profile=${cliArgs.profile}`);
     if (cliArgs.config)
       args.push(`--config=${cliArgs.config}`);
-    if (cliArgs.cdp)
+    if (cliArgs.extension)
+      args.push('--extension');
+    else if (cliArgs.cdp)
       args.push(`--cdp=${cliArgs.cdp}`);
-    if (cliArgs.endpoint)
+    else if (cliArgs.endpoint)
       args.push(`--endpoint=${cliArgs.endpoint}`);
-    else if (mode === 'attach' && process.env.PLAYWRIGHT_CLI_SESSION)
-      args.push(`--endpoint=${process.env.PLAYWRIGHT_CLI_SESSION}`);
 
     const child = spawn(process.execPath, args, {
       detached: true,
       stdio: ['ignore', 'pipe', err],
       cwd: process.cwd(), // Will be used as root.
+      windowsHide: true,
     });
 
     let signalled = false;
@@ -166,23 +169,13 @@ export class Session {
     await new Promise<void>((resolve, reject) => {
       child.stdout!.on('data', data => {
         outLog += data.toString();
-        if (!outLog.includes('<EOF>'))
-          return;
-        const errorMatch = outLog.match(/### Error\n([\s\S]*)<EOF>/);
-        const error = errorMatch ? errorMatch[1].trim() : undefined;
-        if (error) {
-          const errLogContent = fs.readFileSync(errLog, 'utf-8');
-          rejectWithPid(reject, error + (errLogContent ? '\n' + errLogContent : ''));
-        }
-
-        const successMatch = outLog.match(/### Success\nDaemon listening on (.*)\n<EOF>/);
-        if (successMatch)
+        if (outLog.includes('Daemon listening on'))
           resolve();
       });
       child.on('close', code => {
         if (!signalled) {
           const errLogContent = fs.readFileSync(errLog, 'utf-8');
-          rejectWithPid(reject, `Daemon process exited with code ${code}` + (errLogContent ? '\n' + errLogContent : ''));
+          rejectWithPid(reject, `Daemon process exited with code ${code}` + (outLog ? '\n' + outLog : '') + (errLogContent ? '\n' + errLogContent : ''));
         }
       });
     });

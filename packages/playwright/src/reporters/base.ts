@@ -20,7 +20,7 @@ import { Writable } from 'stream';
 import realColors from 'colors/safe';
 import { noColors } from '@isomorphic/colors';
 import { msToString } from '@isomorphic/formatUtils';
-import { parseErrorStack } from '@isomorphic/stackTrace';
+import { parseErrorStack } from '@utils/stackTrace';
 import { getPackageManagerExecCommand } from '@utils/env';
 import { fitToWidth } from '@utils/stringWidth';
 
@@ -86,8 +86,9 @@ class StripAnsiStream extends Writable {
     this._target = target;
   }
 
-  override _write(chunk: any, encoding: any, callback: any) {
-    this._target.write(stripAnsiEscapes(chunk.toString()), callback);
+  override write(chunk: any, encodingOrCallback?: any, callback?: any): boolean {
+    const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+    return this._target.write(stripAnsiEscapes(chunk.toString()), cb);
   }
 }
 
@@ -122,7 +123,8 @@ export const terminalScreen: TerminalScreen = (() => {
 
   let useColors = isTTY;
   if (process.env.DEBUG_COLORS === '0' || process.env.DEBUG_COLORS === 'false' ||
-      process.env.FORCE_COLOR === '0' || process.env.FORCE_COLOR === 'false')
+      process.env.FORCE_COLOR === '0' || process.env.FORCE_COLOR === 'false' ||
+      (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== ''))
     useColors = false;
   else if (process.env.DEBUG_COLORS || process.env.FORCE_COLOR)
     useColors = true;
@@ -161,6 +163,7 @@ export type TerminalReporterOptions = {
   screen?: TerminalScreen;
   omitFailures?: boolean;
   includeTestId?: boolean;
+  omitTags?: boolean;
 };
 
 export class TerminalReporter implements ReporterV2 {
@@ -364,7 +367,7 @@ export class TerminalReporter implements ReporterV2 {
   }
 
   formatTestHeader(test: TestCase, options: { indent?: string, index?: number, mode?: 'default' | 'error' } = {}): string {
-    return formatTestHeader(this.screen, this.config, test, { ...options, includeTestId: this._options.includeTestId });
+    return formatTestHeader(this.screen, this.config, test, { ...options, includeTestId: this._options.includeTestId, omitTags: this._options.omitTags });
   }
 
   formatFailure(test: TestCase, index?: number): string {
@@ -405,7 +408,7 @@ export function formatFailure(screen: Screen, config: FullConfig, test: TestCase
     if (!errors.length)
       continue;
     if (!printedHeader) {
-      const header = formatTestHeader(screen, config, test, { indent: '  ', index, mode: 'error', includeTestId: options?.includeTestId });
+      const header = formatTestHeader(screen, config, test, { indent: '  ', index, mode: 'error', includeTestId: options?.includeTestId, omitTags: options?.omitTags });
       lines.push(screen.colors.red(header));
       printedHeader = true;
     }
@@ -533,11 +536,13 @@ function relativeTestPath(screen: Screen, config: FullConfig, test: TestCase): s
 }
 
 export function stepSuffix(step: TestStep | undefined) {
-  const stepTitles = step ? step.titlePath() : [];
+  const stepTitles: string[] = [];
+  for (let current = step; current; current = current.parent)
+    stepTitles.unshift(current.subtitle ? `${current.title} ${current.subtitle}` : current.title);
   return stepTitles.map(t => t.split('\n')[0]).map(t => ' › ' + t).join('');
 }
 
-function formatTestTitle(screen: Screen, config: FullConfig, test: TestCase, step?: TestStep, options: { includeTestId?: boolean } = {}): string {
+function formatTestTitle(screen: Screen, config: FullConfig, test: TestCase, step?: TestStep, options: { includeTestId?: boolean, omitTags?: boolean } = {}): string {
   // root, project, file, ...describes, test
   const [, projectName, , ...titles] = test.titlePath();
   const location = `${relativeTestPath(screen, config, test)}:${test.location.line}:${test.location.column}`;
@@ -545,11 +550,11 @@ function formatTestTitle(screen: Screen, config: FullConfig, test: TestCase, ste
   const projectLabel = options.includeTestId ? `project=` : '';
   const projectTitle = projectName ? `[${projectLabel}${projectName}] › ` : '';
   const testTitle = `${testId}${projectTitle}${location} › ${titles.join(' › ')}`;
-  const extraTags = test.tags.filter(t => !testTitle.includes(t) && !config.tags.includes(t));
+  const extraTags = options.omitTags ? [] : test.tags.filter(t => !testTitle.includes(t) && !config.tags.includes(t));
   return `${testTitle}${stepSuffix(step)}${extraTags.length ? ' ' + extraTags.join(' ') : ''}`;
 }
 
-function formatTestHeader(screen: Screen, config: FullConfig, test: TestCase, options: { indent?: string, index?: number, mode?: 'default' | 'error', includeTestId?: boolean } = {}): string {
+function formatTestHeader(screen: Screen, config: FullConfig, test: TestCase, options: { indent?: string, index?: number, mode?: 'default' | 'error', includeTestId?: boolean, omitTags?: boolean } = {}): string {
   const title = formatTestTitle(screen, config, test, undefined, options);
   const header = `${options.indent || ''}${options.index ? options.index + ') ' : ''}${title}`;
   let fullHeader = header;
@@ -629,7 +634,7 @@ export function prepareErrorStack(stack: string): {
   stackLines: string[];
   location?: Location;
 } {
-  return parseErrorStack(stack, path.sep, !!process.env.PWDEBUGIMPL);
+  return parseErrorStack(stack);
 }
 
 function resolveFromEnv(name: string): string | undefined {

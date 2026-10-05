@@ -16,7 +16,7 @@ const MAPPING = {
   'https-proxy-agent': { default: 'httpProxyAgent', named: { HttpsProxyAgent: 'HttpsProxyAgent' } },
   'jpeg-js': { default: 'jpegjs' },
   'mime': { default: 'mime' },
-  'minimatch': { default: 'minimatch' },
+  'minimatch': { named: { minimatch: 'minimatch' } },
   'open': { default: 'open' },
   'pngjs': { named: { PNG: 'PNG' } },
   'commander': { named: { program: 'program', Option: 'ProgramOption' } },
@@ -33,6 +33,7 @@ const MAPPING = {
   'chokidar': { default: 'chokidar' },
   'get-east-asian-width': { namespace: 'getEastAsianWidth' },
   'yazl': { namespace: 'yazl' },
+  'yauzl': { default: 'yauzl', namespace: 'yauzl' },
   'zod': { namespace: 'z' },
   'zod-to-json-schema': { named: { zodToJsonSchema: 'zodToJsonSchema' } },
   '@modelcontextprotocol/sdk/client/index.js': { named: { Client: 'Client' } },
@@ -58,7 +59,7 @@ const MAPPING = {
   // come from utilsBundle just like any other vendored package.
   'graceful-fs': { default: 'gracefulFs', namespace: 'gracefulFs' },
   'retry': { default: 'retry' },
-  'signal-exit': { default: 'onExit' },
+  'signal-exit': { named: { onExit: 'onExit' } },
   'get-stream': { default: 'getStream' },
 };
 

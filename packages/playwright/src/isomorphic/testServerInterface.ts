@@ -28,7 +28,6 @@ export interface TestServerInterface {
     closeOnDisconnect?: boolean,
     interceptStdio?: boolean,
     watchTestDirs?: boolean,
-    populateDependenciesOnList?: boolean,
   }): Promise<void>;
 
   ping(params: {}): Promise<void>;
@@ -86,6 +85,7 @@ export interface TestServerInterface {
     testIds?: string[];
     headed?: boolean;
     workers?: number | string;
+    maxFailures?: number;
     updateSnapshots?: 'all' | 'changed' | 'missing' | 'none';
     updateSourceMethod?: 'overwrite' | 'patch' | '3way';
     reporters?: string[],

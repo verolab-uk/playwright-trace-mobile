@@ -15,6 +15,7 @@
  */
 
 import { contextTest as it, expect } from '../../config/browserTest';
+import { attachFrame } from '../../config/utils';
 import type { Frame, Browser } from '@playwright/test';
 
 it.use({
@@ -43,6 +44,34 @@ it('should handle oopif detach', async function({ page, browser, server }) {
   expect(detachedFrame).toBe(frame);
 });
 
+it('should remove workers of a detached oopif', async function({ page, browser, server }) {
+  await page.goto(server.EMPTY_PAGE);
+  const [worker] = await Promise.all([
+    page.waitForEvent('worker'),
+    attachFrame(page, 'frame1', server.CROSS_PROCESS_PREFIX + '/worker/worker.html'),
+  ]);
+  await assertOOPIFCount(browser, 1);
+  expect(page.workers().length).toBe(1);
+  await Promise.all([
+    worker.waitForEvent('close'),
+    page.goto(server.PREFIX + '/title.html'),
+  ]);
+  expect(page.workers().length).toBe(0);
+});
+
+it('should not hang in unrouteAll when oopif worker is gone', async function({ page, context, browser, server }) {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/42278' });
+  await context.route('**/*', route => route.continue());
+  await page.goto(server.EMPTY_PAGE);
+  await Promise.all([
+    page.waitForEvent('worker'),
+    attachFrame(page, 'frame1', server.CROSS_PROCESS_PREFIX + '/worker/worker.html'),
+  ]);
+  await assertOOPIFCount(browser, 1);
+  await page.goto(server.CROSS_PROCESS_PREFIX + '/title.html');
+  await context.unrouteAll();
+});
+
 it('should handle remote -> local -> remote transitions', async function({ page, browser, server }) {
   await page.goto(server.PREFIX + '/dynamic-oopif.html');
   expect(page.frames().length).toBe(2);
@@ -62,9 +91,7 @@ it('should handle remote -> local -> remote transitions', async function({ page,
   await assertOOPIFCount(browser, 1);
 });
 
-it('should get the proper viewport', async ({ page, browser, server }) => {
-  it.fixme();
-
+it.fixme('should get the proper viewport', async ({ page, browser, server }) => {
   expect(page.viewportSize()).toEqual({ width: 1280, height: 720 });
   await page.goto(server.PREFIX + '/dynamic-oopif.html');
   expect(page.frames().length).toBe(2);

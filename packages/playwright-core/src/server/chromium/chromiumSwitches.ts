@@ -20,8 +20,6 @@
 const disabledFeatures = [
   // See https://github.com/microsoft/playwright/issues/14047
   'AvoidUnnecessaryBeforeUnloadCheckSync',
-  // See https://github.com/microsoft/playwright/issues/38568
-  'BoundaryEventDispatchTracksNodeRemoval',
   'DestroyProfileOnBrowserClose',
   // See https://github.com/microsoft/playwright/pull/13854
   'DialMediaRouteProvider',
@@ -36,12 +34,13 @@ const disabledFeatures = [
   'PaintHolding',
   // See https://github.com/microsoft/playwright/issues/32230
   'ThirdPartyStoragePartitioning',
+  // Chromium 149 rejects re-applying the `origin` header on a redirect (as request interception
+  // does) with net::ERR_INVALID_ARGUMENT. See https://github.com/microsoft/playwright/issues/41690
+  'BlockOriginHeaderModificationOnRedirect',
   // See https://github.com/microsoft/playwright/issues/16126
   'Translate',
   // See https://issues.chromium.org/u/1/issues/435410220
   'AutoDeElevate',
-  // See https://github.com/microsoft/playwright/issues/37714
-  'RenderDocument',
   // Prevents downloading optimization hints on startup.
   'OptimizationHints',
   // Disables forced sign-in in Edge.
@@ -73,6 +72,7 @@ export const chromiumSwitches = (options?: { android?: boolean }) => [
   '--disable-popup-blocking',
   '--disable-prompt-on-repost',
   '--disable-renderer-backgrounding',
+  '--disable-updater-scheduler', // Prevents Edge-specific updater from being launched when Edge is launched on mac.
   '--force-color-profile=srgb',
   '--metrics-recording-only',
   '--no-first-run',

@@ -17,7 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import type { FullResult, Suite } from '../../types/testReporter';
+import type { FullResult, Suite, TestCase } from '../../types/testReporter';
 import type { config as commonConfig } from '../common';
 import type { ReporterV2 } from '../reporters/reporterV2';
 
@@ -26,26 +26,39 @@ type LastRunInfo = {
   failedTests: string[];
 };
 
+function didNotRun(test: TestCase): boolean {
+  if (test.outcome() !== 'skipped')
+    return false;
+  if (test.results.some(result => result.status === 'interrupted'))
+    return false;
+  return !test.results.length || test.expectedStatus !== 'skipped';
+}
+
 export class LastRunReporter implements ReporterV2 {
   private _lastRunFile: string | undefined;
   private _suite: Suite | undefined;
   private _listMode: boolean;
 
-  constructor(filteredProjects: commonConfig.FullProjectInternal[], listMode?: boolean) {
+  constructor(filteredProjects: commonConfig.FullProjectInternal[], listMode?: boolean, lastFailedFileOverride?: string) {
     this._listMode = !!listMode;
-    const [project] = filteredProjects;
-    if (project)
-      this._lastRunFile = path.join(project.project.outputDir, '.last-run.json');
+    const override = lastFailedFileOverride ?? process.env.PLAYWRIGHT_LAST_RUN_OUTPUT_FILE;
+    if (override) {
+      this._lastRunFile = path.resolve(process.cwd(), override);
+    } else {
+      const [project] = filteredProjects;
+      if (project)
+        this._lastRunFile = path.join(project.project.outputDir, '.last-run.json');
+    }
   }
 
-  async filterLastFailed(): Promise<string[]> {
+  async filterLastFailed(): Promise<string[] | undefined> {
     if (!this._lastRunFile)
-      return [];
+      return undefined;
     try {
       const lastRunInfo = JSON.parse(await fs.promises.readFile(this._lastRunFile, 'utf8')) as LastRunInfo;
       return lastRunInfo.failedTests;
     } catch {
-      return [];
+      return undefined;
     }
   }
 
@@ -66,7 +79,7 @@ export class LastRunReporter implements ReporterV2 {
       return;
     const lastRunInfo: LastRunInfo = {
       status: result.status,
-      failedTests: this._suite?.allTests().filter(t => !t.ok()).map(t => t.id) || [],
+      failedTests: this._suite?.allTests().filter(t => !t.ok() || didNotRun(t)).map(t => t.id) || [],
     };
     await fs.promises.mkdir(path.dirname(this._lastRunFile), { recursive: true });
     await fs.promises.writeFile(this._lastRunFile, JSON.stringify(lastRunInfo, undefined, 2));

@@ -19,6 +19,7 @@ import { EventEmitter } from 'events';
 import { createGuid } from '@utils/crypto';
 import { debugLogger } from '@utils/debugLogger';
 
+import type { SerializedError } from './channels';
 import type { Browser } from './browser';
 import type { BrowserContext } from './browserContext';
 import type { BrowserType } from './browserType';
@@ -28,8 +29,8 @@ import type { APIRequestContext } from './fetch';
 import type { Frame } from './frames';
 import type { Page, Worker } from './page';
 import type { Playwright } from './playwright';
-import type { CallMetadata } from '@protocol/callMetadata';
-export type { CallMetadata } from '@protocol/callMetadata';
+import type { Progress } from './progress';
+import type * as types from './types';
 import type { LogName } from '@utils/debugLogger';
 
 export type Attribution = {
@@ -79,13 +80,38 @@ export function createRootSdkObject() {
   return root;
 }
 
+export type AddListenerOptions = { order?: 'last' };
+
+export type CallMetadata = {
+  id: string;
+  startTime: number;
+  endTime: number;
+  pauseStartTime?: number;
+  pauseEndTime?: number;
+  type: string;
+  method: string;
+  params: any;
+  timeout?: number;
+  title?: string;
+  // Client is making an internal call that should not show up in
+  // the inspector or trace.
+  internal?: boolean;
+  // Test runner step id.
+  stepId?: string;
+  location?: { file: string, line?: number, column?: number };
+  log: string[];
+  error?: SerializedError;
+  result?: any;
+  objectId?: string;
+};
+
 export interface Instrumentation {
-  addListener(listener: InstrumentationListener, context: BrowserContext | APIRequestContext | null): void;
+  addListener(listener: InstrumentationListener, context: BrowserContext | APIRequestContext | null, options?: AddListenerOptions): void;
   removeListener(listener: InstrumentationListener): void;
-  onBeforeCall(sdkObject: SdkObject, metadata: CallMetadata, parentId?: string): Promise<void>;
-  onBeforeInputAction(sdkObject: SdkObject, metadata: CallMetadata): Promise<void>;
+  onBeforeCall(progress: Progress, sdkObject: SdkObject, parentId?: string): Promise<void>;
+  onBeforeInputAction(progress: Progress, sdkObject: SdkObject, point?: types.Point, box?: types.Rect): Promise<void>;
   onCallLog(sdkObject: SdkObject, metadata: CallMetadata, logName: string, message: string): void;
-  onAfterCall(sdkObject: SdkObject, metadata: CallMetadata): Promise<void>;
+  onAfterCall(progress: Progress, sdkObject: SdkObject): Promise<void>;
   onPageOpen(page: Page): void;
   onPageClose(page: Page): void;
   onBrowserOpen(browser: Browser): void;
@@ -95,10 +121,10 @@ export interface Instrumentation {
 }
 
 export interface InstrumentationListener {
-  onBeforeCall?(sdkObject: SdkObject, metadata: CallMetadata, parentId?: string): Promise<void>;
-  onBeforeInputAction?(sdkObject: SdkObject, metadata: CallMetadata): Promise<void>;
+  onBeforeCall?(progress: Progress, sdkObject: SdkObject, parentId?: string): Promise<void>;
+  onBeforeInputAction?(progress: Progress, sdkObject: SdkObject, point?: types.Point, box?: types.Rect): Promise<void>;
   onCallLog?(sdkObject: SdkObject, metadata: CallMetadata, logName: string, message: string): void;
-  onAfterCall?(sdkObject: SdkObject, metadata: CallMetadata): Promise<void>;
+  onAfterCall?(progress: Progress, sdkObject: SdkObject): Promise<void>;
   onPageOpen?(page: Page): void;
   onPageClose?(page: Page): void;
   onBrowserOpen?(browser: Browser): void;
@@ -109,20 +135,36 @@ export interface InstrumentationListener {
 
 export function createInstrumentation(): Instrumentation {
   const listeners = new Map<InstrumentationListener, BrowserContext | APIRequestContext | null>();
+  const lastListeners = new Map<InstrumentationListener, BrowserContext | APIRequestContext | null>();
   return new Proxy({}, {
     get: (obj: any, prop: string | symbol) => {
       if (typeof prop !== 'string')
         return obj[prop];
-      if (prop === 'addListener')
-        return (listener: InstrumentationListener, context: BrowserContext | APIRequestContext | null) => listeners.set(listener, context);
-      if (prop === 'removeListener')
-        return (listener: InstrumentationListener) => listeners.delete(listener);
+      if (prop === 'addListener') {
+        return (listener: InstrumentationListener, context: BrowserContext | APIRequestContext | null, options?: AddListenerOptions) => {
+          if (options?.order === 'last')
+            lastListeners.set(listener, context);
+          else
+            listeners.set(listener, context);
+        };
+      }
+      if (prop === 'removeListener') {
+        return (listener: InstrumentationListener) => {
+          listeners.delete(listener);
+          lastListeners.delete(listener);
+        };
+      }
       if (!prop.startsWith('on'))
         return obj[prop];
-      return async (sdkObject: SdkObject, ...params: any[]) => {
+      return async (...params: any[]) => {
+        const sdkObject: SdkObject = params[0] instanceof SdkObject ? params[0] : params[1];
         for (const [listener, context] of listeners) {
           if (!context || sdkObject.attribution.context === context)
-            await (listener as any)[prop]?.(sdkObject, ...params);
+            await (listener as any)[prop]?.(...params);
+        }
+        for (const [listener, context] of lastListeners) {
+          if (!context || sdkObject.attribution.context === context)
+            await (listener as any)[prop]?.(...params);
         }
       };
     },

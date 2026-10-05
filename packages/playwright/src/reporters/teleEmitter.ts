@@ -200,6 +200,7 @@ export class TeleReporterEmitter implements ReporterV2 {
       globalTeardown: config.globalTeardown,
       tags: config.tags,
       webServer: config.webServer,
+      failOnFlakyTests: config.failOnFlakyTests,
     };
   }
 
@@ -315,7 +316,9 @@ export class TeleReporterEmitter implements ReporterV2 {
       id: (step as any)[this._idSymbol],
       parentStepId: (step.parent as any)?.[this._idSymbol],
       title: step.title,
+      subtitle: step.subtitle,
       category: step.category,
+      params: step.params,
       startTime: +step.startTime,
       location: this._relativeLocation(step.location),
     };

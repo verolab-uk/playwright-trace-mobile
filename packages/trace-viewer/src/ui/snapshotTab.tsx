@@ -16,7 +16,7 @@
 
 import './snapshotTab.css';
 import * as React from 'react';
-import type { ActionTraceEvent } from '@trace/trace';
+import type { ActionPhase, ActionTraceEvent } from '@isomorphic/trace/trace';
 import { nextActionByStartTime, previousActionByEndTime } from '@isomorphic/trace/traceModel';
 import type { TraceModel } from '@isomorphic/trace/traceModel';
 import { Toolbar } from '@web/components/toolbar';
@@ -35,6 +35,7 @@ import { parseAriaSnapshot } from '@isomorphic/ariaSnapshot';
 import yaml from 'yaml';
 import { PlaybackButtons } from './playbackControl';
 import type { PlaybackState } from './playbackControl';
+import { AriaModeView, collectAriaModeTargets, shouldDisplayAriaMode } from './ariaModeView';
 
 export type HighlightedElement = {
   locator?: string,
@@ -56,10 +57,20 @@ export const SnapshotTabsView: React.FunctionComponent<{
   const [snapshotTab, setSnapshotTab] = React.useState<'action'|'before'|'after'>('action');
 
   const [shouldPopulateCanvasFromScreenshot] = useSetting('shouldPopulateCanvasFromScreenshot', false);
+  const [displayAriaModeSetting] = useSetting('displayAriaMode', false);
+  const displayAriaMode = shouldDisplayAriaMode(model, displayAriaModeSetting);
 
   const snapshots = React.useMemo(() => {
-    return collectSnapshots(action);
-  }, [action]);
+    return collectSnapshots(model, action);
+  }, [model, action]);
+  const ariaModeTargets = React.useMemo(() => {
+    return model && displayAriaMode ? collectAriaModeTargets(model, action) : {};
+  }, [model, action, displayAriaMode]);
+
+  React.useEffect(() => {
+    if (displayAriaMode && isInspecting)
+      setIsInspecting(false);
+  }, [displayAriaMode, isInspecting, setIsInspecting]);
   const { snapshotInfoUrl, snapshotUrl, popoutUrl } = React.useMemo(() => {
     const snapshot = snapshots[snapshotTab];
     return model && snapshot ? extendSnapshot(model.traceUri, snapshot, shouldPopulateCanvasFromScreenshot) : { snapshotInfoUrl: undefined, snapshotUrl: undefined, popoutUrl: undefined };
@@ -69,7 +80,7 @@ export const SnapshotTabsView: React.FunctionComponent<{
 
   return <div className='snapshot-tab vbox'>
     <Toolbar>
-      <ToolbarButton className='pick-locator' title='Pick locator' icon='target' toggled={isInspecting} onClick={() => setIsInspecting(!isInspecting)} />
+      <ToolbarButton className='pick-locator' title='Pick locator' icon='target' disabled={displayAriaMode} toggled={isInspecting} onClick={() => setIsInspecting(!isInspecting)} />
       <div className='hbox' style={{ height: '100%' }} role='tablist'>
         {(['action', 'before', 'after'] as const).map(tab => {
           return <TabbedPaneTab
@@ -83,15 +94,21 @@ export const SnapshotTabsView: React.FunctionComponent<{
       </div>
       <div style={{ flex: 'auto' }}></div>
       <PlaybackButtons playback={playback} />
-      <ToolbarButton icon='link-external' title='Open snapshot in a new tab' disabled={!snapshotUrls?.popoutUrl} onClick={() => {
+      <ToolbarButton icon='link-external' title='Open snapshot in a new tab' disabled={displayAriaMode || !snapshotUrls?.popoutUrl} onClick={() => {
         const win = window.open(snapshotUrls?.popoutUrl || '', '_blank');
         win?.addEventListener('DOMContentLoaded', () => {
-          const injectedScript = new InjectedScript(win as any, { isUnderTest, sdkLanguage, testIdAttributeName, stableRafCount: 1, browserName: 'chromium', customEngines: [] });
+          const injectedScript = new InjectedScript(win as any, { isUnderTest, frameSeq: 0, sdkLanguage, testIdAttributeName, stableRafCount: 1, browserName: 'chromium', customEngines: [] });
           injectedScript.consoleApi.install();
         });
       }} />
     </Toolbar>
-    <SnapshotView
+    {displayAriaMode && <AriaModeView
+      model={model}
+      target={ariaModeTargets[snapshotTab]}
+      point={snapshotTab === 'action' ? action?.point : undefined}
+      box={snapshotTab === 'action' ? action?.box : undefined}
+    />}
+    {!displayAriaMode && <SnapshotView
       snapshotUrls={snapshotUrls}
       sdkLanguage={sdkLanguage}
       testIdAttributeName={testIdAttributeName}
@@ -99,7 +116,7 @@ export const SnapshotTabsView: React.FunctionComponent<{
       setIsInspecting={setIsInspecting}
       highlightedElement={highlightedElement}
       setHighlightedElement={setHighlightedElement}
-    />
+    />}
   </div>;
 };
 
@@ -211,10 +228,16 @@ const SnapshotWrapper: React.FunctionComponent<React.PropsWithChildren<{
     height: Math.max(snapshotContainerSize.height + windowHeaderHeight, 320),
   };
 
-  const scale = Math.min(measure.width / renderedBrowserFrameSize.width, measure.height / renderedBrowserFrameSize.height, 1);
+  // `measure` is the wrapper's border box (getBoundingClientRect), which includes the
+  // 10px padding on every side. Fit and center the frame within the content box so it
+  // keeps a padding-sized margin (with room for the box-shadow) when squeezed.
+  const padding = 10;
+  const availableWidth = measure.width - 2 * padding;
+  const availableHeight = measure.height - 2 * padding;
+  const scale = Math.min(availableWidth / renderedBrowserFrameSize.width, availableHeight / renderedBrowserFrameSize.height, 1);
   const translate = {
-    x: (measure.width - renderedBrowserFrameSize.width) / 2,
-    y: (measure.height - renderedBrowserFrameSize.height) / 2,
+    x: (measure.width - renderedBrowserFrameSize.width) / 2 - padding,
+    y: (measure.height - renderedBrowserFrameSize.height) / 2 - padding,
   };
 
   return <div ref={ref} className='snapshot-wrapper'>
@@ -273,10 +296,17 @@ export const InspectModeController: React.FunctionComponent<{
     for (const { recorder, frameSelector } of recorders) {
       const actionSelector = fullSelector?.startsWith(frameSelector) ? fullSelector.substring(frameSelector.length).trim() : undefined;
       const ariaTemplate = parsedSnapshot?.errors.length === 0 ? parsedSnapshot.fragment : undefined;
+      try {
+        const highlightSelector = actionSelector || (ariaTemplate ? 'aria-template=' + JSON.stringify(ariaTemplate) : undefined);
+        if (highlightSelector)
+          recorder.injectedScript.setHighlights([{ selector: recorder.injectedScript.parseSelector(highlightSelector) }]);
+        else
+          recorder.injectedScript.setHighlights([]);
+      } catch {
+        recorder.injectedScript.setHighlights([]);
+      }
       recorder.setUIState({
         mode: isInspecting ? 'inspecting' : 'none',
-        actionSelector,
-        ariaTemplate,
         language: sdkLanguage,
         testIdAttributeName,
         overlay: { offsetX: 0 },
@@ -305,7 +335,7 @@ function createRecorders(recorders: { recorder: Recorder, frameSelector: string 
     return;
   const win = frameWindow as any;
   if (!win._recorder && force) {
-    const injectedScript = new InjectedScript(frameWindow as any, { isUnderTest, sdkLanguage, testIdAttributeName, stableRafCount: 1, browserName: 'chromium', customEngines: [] });
+    const injectedScript = new InjectedScript(frameWindow as any, { isUnderTest, frameSeq: 0, sdkLanguage, testIdAttributeName, stableRafCount: 1, browserName: 'chromium', customEngines: [] });
     const recorder = new Recorder(injectedScript);
     win._injectedScript = injectedScript;
     win._recorder = { recorder, frameSelector: parentFrameSelector };
@@ -326,30 +356,16 @@ function createRecorders(recorders: { recorder: Recorder, frameSelector: string 
 
 export type Snapshot = {
   action: ActionTraceEvent;
-  snapshotName: string;
-  pageId: string;
+  phase: ActionPhase;
   point?: { x: number, y: number };
 };
 
-const createSnapshot = (action: ActionTraceEvent, snapshotNameKey: 'beforeSnapshot' | 'afterSnapshot' | 'inputSnapshot'): Snapshot | undefined => {
-  if (!action)
+const createSnapshot = (model: TraceModel, action: ActionTraceEvent | undefined, phase: ActionPhase): Snapshot | undefined => {
+  if (!action || !model.hasDomSnapshotForCall(action.callId, phase))
     return undefined;
-
-  const snapshotName = action[snapshotNameKey];
-
-  if (!snapshotName)
-    return undefined;
-
-  if (!action.pageId) {
-    // eslint-disable-next-line no-console
-    console.error('snapshot action must have a pageId');
-    return undefined;
-  }
-
   return {
     action,
-    snapshotName,
-    pageId: action.pageId,
+    phase,
     point: action.point,
   };
 };
@@ -373,22 +389,24 @@ export type SnapshotUrls = {
   popoutUrl: string;
 };
 
-export function collectSnapshots(action: ActionTraceEvent | undefined): Snapshots {
-  if (!action)
+export function collectSnapshots(model: TraceModel | undefined, action: ActionTraceEvent | undefined): Snapshots {
+  if (!model || !action)
     return {};
 
-  let beforeSnapshot = createSnapshot(action, 'beforeSnapshot');
+  const hasSnapshot = (callId: string, phase: ActionPhase) => model.hasDomSnapshotForCall(callId, phase);
+
+  let beforeSnapshot = createSnapshot(model, action, 'before');
   if (!beforeSnapshot) {
-    // If the action has no beforeSnapshot, use the last available afterSnapshot.
+    // If the action has no "before" snapshot, use the last available "after" one.
     for (let a = previousActionByEndTime(action); a; a = previousActionByEndTime(a)) {
-      if (a.endTime <= action.startTime && a.afterSnapshot) {
-        beforeSnapshot = createSnapshot(a, 'afterSnapshot');
+      if (a.endTime <= action.startTime && hasSnapshot(a.callId, 'after')) {
+        beforeSnapshot = createSnapshot(model, a, 'after');
         break;
       }
     }
   }
 
-  let afterSnapshot = createSnapshot(action, 'afterSnapshot');
+  let afterSnapshot = createSnapshot(model, action, 'after');
   if (!afterSnapshot) {
     let last: ActionTraceEvent | undefined;
     // - For test.step, we want to use the snapshot of the last nested action.
@@ -396,22 +414,22 @@ export function collectSnapshots(action: ActionTraceEvent | undefined): Snapshot
     //   as a best effort.
     // - If there are no "nested" actions, use the beforeSnapshot which works best
     //   for simple `expect(a).toBe(b);` case. Also if the action doesn't have
-    //   afterSnapshot, it likely doesn't have its own beforeSnapshot either,
+    //   an "after" snapshot, it likely doesn't have its own "before" one either,
     //   and we calculated it above from a previous action.
     for (let a = nextActionByStartTime(action); a && a.startTime <= action.endTime; a = nextActionByStartTime(a)) {
-      if (a.endTime > action.endTime || !a.afterSnapshot)
+      if (a.endTime > action.endTime || !hasSnapshot(a.callId, 'after'))
         continue;
       if (last && last.endTime > a.endTime)
         continue;
       last = a;
     }
     if (last)
-      afterSnapshot = createSnapshot(last, 'afterSnapshot');
+      afterSnapshot = createSnapshot(model, last, 'after');
     else
       afterSnapshot = beforeSnapshot;
   }
 
-  const actionSnapshot = createSnapshot(action, 'inputSnapshot') ?? afterSnapshot;
+  const actionSnapshot = createSnapshot(model, action, 'action') ?? afterSnapshot;
   if (actionSnapshot)
     actionSnapshot.point = action.point;
   return { action: actionSnapshot, before: beforeSnapshot, after: afterSnapshot };
@@ -422,7 +440,6 @@ const isUnderTest = new URLSearchParams(window.location.search).has('isUnderTest
 export function extendSnapshot(traceUri: string, snapshot: Snapshot, shouldPopulateCanvasFromScreenshot: boolean): SnapshotUrls {
   const params = new URLSearchParams();
   params.set('trace', traceUri);
-  params.set('name', snapshot.snapshotName);
   if (isUnderTest)
     params.set('isUnderTest', 'true');
   if (snapshot.point) {
@@ -432,8 +449,11 @@ export function extendSnapshot(traceUri: string, snapshot: Snapshot, shouldPopul
   if (shouldPopulateCanvasFromScreenshot)
     params.set('shouldPopulateCanvasFromScreenshot', '1');
 
-  const snapshotUrl = new URL(`snapshot/${snapshot.pageId}?${params.toString()}`, window.location.href).toString();
-  const snapshotInfoUrl = new URL(`snapshotInfo/${snapshot.pageId}?${params.toString()}`, window.location.href).toString();
+  params.set('phase', snapshot.phase);
+
+  const callId = encodeURIComponent(snapshot.action.callId);
+  const snapshotUrl = new URL(`snapshot/${callId}?${params.toString()}`, window.location.href).toString();
+  const snapshotInfoUrl = new URL(`snapshotInfo/${callId}?${params.toString()}`, window.location.href).toString();
 
   const popoutParams = new URLSearchParams();
   popoutParams.set('r', snapshotUrl);

@@ -28,7 +28,7 @@ import type { SnapshotData } from './snapshotterInjected';
 import type { RegisteredListener } from '@utils/eventsHelper';
 import type { Frame } from '../../frames';
 import type { InitScript } from '../../page';
-import type { FrameSnapshot } from '@trace/snapshot';
+import type { ActionPhase, FrameSnapshot } from '@isomorphic/trace/trace';
 import type { Progress } from '../../progress';
 
 export type SnapshotterBlob = {
@@ -37,7 +37,7 @@ export type SnapshotterBlob = {
 };
 
 export interface SnapshotterDelegate {
-  onSnapshotterBlob(blob: SnapshotterBlob): void;
+  onSnapshotterBlob(blob: SnapshotterBlob): string;
   onFrameSnapshot(snapshot: FrameSnapshot): void;
 }
 
@@ -69,7 +69,7 @@ export class Snapshotter {
 
   async reset() {
     if (this._started)
-      await this._context.safeNonStallingEvaluateInAllFrames(`window["${this._snapshotStreamer}"].reset()`, 'main');
+      await this._context.safeNonStallingEvaluateInAllFrames(`window["${this._snapshotStreamer}"].resetHistory()`, 'main');
   }
 
   stop() {
@@ -90,6 +90,7 @@ export class Snapshotter {
       this._onPage(page);
     this._eventListeners = [
       eventsHelper.addEventListener(this._context, BrowserContext.Events.Page, this._onPage.bind(this)),
+      eventsHelper.addEventListener(this._context, BrowserContext.Events.FrameAttached, frame => this._annotateFrameHierarchy(frame)),
     ];
 
     const { javaScriptEnabled } = this._context._options;
@@ -102,11 +103,12 @@ export class Snapshotter {
     eventsHelper.removeEventListeners(this._eventListeners);
   }
 
-  private async _captureFrameSnapshot(frame: Frame): Promise<SnapshotData | void> {
+  private async _captureFrameSnapshot(frame: Frame, resetTargets: boolean): Promise<SnapshotData | void> {
     // Prepare expression synchronously.
-    const needsReset = !!(frame as any)[kNeedsResetSymbol];
+    const needsHistoryReset = !!(frame as any)[kNeedsResetSymbol];
     (frame as any)[kNeedsResetSymbol] = false;
-    const expression = `window["${this._snapshotStreamer}"].captureSnapshot(${needsReset ? 'true' : 'false'})`;
+    const reset = needsHistoryReset ? 'history' : (resetTargets ? 'targets' : undefined);
+    const expression = `window["${this._snapshotStreamer}"].captureSnapshot(${JSON.stringify(reset)})`;
     try {
       return await frame.nonStallingRawEvaluateInExistingMainContext(expression);
     } catch (e) {
@@ -118,17 +120,17 @@ export class Snapshotter {
     }
   }
 
-  async captureSnapshot(page: Page, callId: string, snapshotName: string): Promise<void> {
+  async captureSnapshot(page: Page, callId: string, phase: ActionPhase, resetTargets: boolean): Promise<void> {
     // In each frame, in a non-stalling manner, capture the snapshots.
     const snapshots = page.frames().map(async frame => {
-      const data = await this._captureFrameSnapshot(frame);
+      const data = await this._captureFrameSnapshot(frame, resetTargets);
       // Something went wrong -> bail out, our snapshots are best-efforty.
       if (!data || !this._started)
         return;
 
       const snapshot: FrameSnapshot = {
         callId,
-        snapshotName,
+        phase,
         pageId: page.guid,
         frameId: frame.guid,
         frameUrl: data.url,
@@ -145,8 +147,8 @@ export class Snapshotter {
         if (typeof content === 'string') {
           const buffer = Buffer.from(content);
           const sha1 = calculateSha1(buffer) + '.' + (mime.getExtension(contentType) || 'dat');
-          this._delegate.onSnapshotterBlob({ sha1, buffer });
-          snapshot.resourceOverrides.push({ url, sha1 });
+          const file = this._delegate.onSnapshotterBlob({ sha1, buffer });
+          snapshot.resourceOverrides.push({ url, file });
         } else {
           snapshot.resourceOverrides.push({ url, ref: content });
         }
@@ -160,7 +162,6 @@ export class Snapshotter {
     // Annotate frame hierarchy so that snapshots could include frame ids.
     for (const frame of page.frames())
       this._annotateFrameHierarchy(frame);
-    this._eventListeners.push(eventsHelper.addEventListener(page, Page.Events.FrameAttached, frame => this._annotateFrameHierarchy(frame)));
   }
 
   private _annotateFrameHierarchy(frame: Frame) {

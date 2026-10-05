@@ -41,9 +41,8 @@ export async function createConnection(userConfig: Config = {}, contextGetter?: 
       const context = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];
       return new BrowserBackend(config, context, tools);
     },
-    disposed: async () => { }
   };
-  return createServer('api', packageJSON.version, backendFactory, false);
+  return createServer('api', packageJSON.version, backendFactory, Promise.resolve(), false);
 }
 
 class SimpleBrowser {

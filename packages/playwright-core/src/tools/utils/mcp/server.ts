@@ -38,32 +38,11 @@ export type ClientInfo = {
   clientName: string;
 };
 
-class BackendManager {
-  private _backends = new Map<ServerBackend, ServerBackendFactory>();
-
-  async createBackend(factory: ServerBackendFactory, clientInfo: ClientInfo): Promise<ServerBackend> {
-    const backend = await factory.create(clientInfo);
-    await backend.initialize?.(clientInfo);
-    this._backends.set(backend, factory);
-    return backend;
-  }
-
-  async disposeBackend(backend: ServerBackend) {
-    const factory = this._backends.get(backend);
-    if (!factory)
-      return;
-    await backend.dispose?.();
-    await factory.disposed(backend).catch(serverDebug);
-    this._backends.delete(backend);
-  }
-}
-
-const backendManager = new BackendManager();
-
 export interface ServerBackend {
   initialize?(clientInfo: ClientInfo): Promise<void>;
-  callTool(name: string, args: CallToolRequest['params']['arguments'], signal: AbortSignal): Promise<CallToolResult & { isClose?: boolean }>;
+  callTool(name: string, args: CallToolRequest['params']['arguments'], signal: AbortSignal): Promise<CallToolResult>;
   dispose?(): Promise<void>;
+  once(event: 'disconnected', listener: () => void): void;
 }
 
 export type ServerBackendFactory = {
@@ -72,15 +51,14 @@ export type ServerBackendFactory = {
   version: string;
   toolSchemas: ToolSchema<any>[];
   create: (clientInfo: ClientInfo) => Promise<ServerBackend>;
-  disposed: (backend: ServerBackend) => Promise<void>;
 };
 
-export async function connect(factory: ServerBackendFactory, transport: Transport, runHeartbeat: boolean) {
-  const server = createServer(factory.name, factory.version, factory, runHeartbeat);
+export async function connect(factory: ServerBackendFactory, transport: Transport, transportInitialized: Promise<void>, runHeartbeat: boolean) {
+  const server = createServer(factory.name, factory.version, factory, transportInitialized, runHeartbeat);
   await server.connect(transport);
 }
 
-export function createServer(name: string, version: string, factory: ServerBackendFactory, runHeartbeat: boolean): ServerType {
+export function createServer(name: string, version: string, factory: ServerBackendFactory, transportInitialized: Promise<void>, runHeartbeat: boolean): ServerType {
   const server = new Server({ name, version }, {
     capabilities: {
       tools: {},
@@ -93,8 +71,9 @@ export function createServer(name: string, version: string, factory: ServerBacke
   });
 
   let backendPromise: Promise<ServerBackend> | undefined;
+  let heartbeatStarted = false;
 
-  const onClose = () => backendPromise?.then(b => backendManager.disposeBackend(b)).catch(serverDebug);
+  const onClose = () => backendPromise?.then(b => b.dispose?.()).catch(serverDebug);
   addServerListener(server, 'close', onClose);
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
@@ -102,20 +81,27 @@ export function createServer(name: string, version: string, factory: ServerBacke
 
     try {
       if (!backendPromise) {
-        backendPromise = initializeServer(server, factory, runHeartbeat).catch(e => {
-          backendPromise = undefined;
+        const promise = initializeServer(server, factory, transportInitialized).then(backend => {
+          backend.once('disconnected', () => {
+            if (backendPromise === promise)
+              backendPromise = undefined;
+            void backend.dispose?.().catch(serverDebug);
+          });
+          if (runHeartbeat && !heartbeatStarted) {
+            heartbeatStarted = true;
+            void transportInitialized.then(() => startHeartbeat(server));
+          }
+          return backend;
+        }).catch(e => {
+          if (backendPromise === promise)
+            backendPromise = undefined;
           throw e;
         });
+        backendPromise = promise;
       }
 
       const backend = await backendPromise;
       const toolResult = await backend.callTool(request.params.name, request.params.arguments || {}, extra.signal);
-      if (toolResult.isClose) {
-        await backendManager.disposeBackend(backend).catch(serverDebug);
-        backendPromise = undefined;
-        delete toolResult.isClose;
-      }
-
       const mergedResult = mergeTextParts(toolResult);
       serverDebugResponse('callResult', mergedResult);
       return mergedResult;
@@ -129,10 +115,11 @@ export function createServer(name: string, version: string, factory: ServerBacke
   return server;
 }
 
-const initializeServer = async (server: ServerType, factory: ServerBackendFactory, runHeartbeat: boolean): Promise<ServerBackend> => {
+const initializeServer = async (server: ServerType, factory: ServerBackendFactory, transportInitialized: Promise<void>): Promise<ServerBackend> => {
   const capabilities = server.getClientCapabilities();
   let clientRoots: Root[] = [];
   if (capabilities?.roots) {
+    await Promise.race([transportInitialized, new Promise<void>(f => setTimeout(f, 5000))]);
     const { roots } = await server.listRoots().catch(e => {
       serverDebug(e);
       return { roots: [] };
@@ -145,17 +132,32 @@ const initializeServer = async (server: ServerType, factory: ServerBackendFactor
     clientName: server.getClientVersion()?.name ?? 'Playwright MCP',
   };
 
-  const backend = await backendManager.createBackend(factory, clientInfo);
-  if (runHeartbeat)
-    startHeartbeat(server);
+  const backend = await factory.create(clientInfo);
+  await backend.initialize?.(clientInfo);
   return backend;
 };
 
+const defaultPingTimeout = 5000;
+
+const pingTimeout = (): number => {
+  const value = process.env.PLAYWRIGHT_MCP_PING_TIMEOUT_MS;
+  if (value === undefined)
+    return defaultPingTimeout;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed))
+    return defaultPingTimeout;
+  return parsed;
+};
+
 const startHeartbeat = (server: ServerType) => {
+  const timeout = pingTimeout();
+  if (timeout <= 0)
+    return;
+
   const beat = () => {
     Promise.race([
       server.ping(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('ping timeout')), 5000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('ping timeout')), timeout)),
     ]).then(() => {
       setTimeout(beat, 3000);
     }).catch(() => {
@@ -180,7 +182,7 @@ export async function start(serverBackendFactory: ServerBackendFactory, options:
     // The SDK's StdioServerTransport doesn't detect peer disconnect — it never listens for stdin
     // end-of-stream. Wire it up so callTool requests can be cancelled when the client goes away.
     process.stdin.on('end', () => void transport.close());
-    await connect(serverBackendFactory, transport, false);
+    await connect(serverBackendFactory, transport, Promise.resolve(), false);
     return;
   }
 

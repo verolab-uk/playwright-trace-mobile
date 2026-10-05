@@ -34,7 +34,6 @@ import { DisposableDispatcher } from './disposableDispatcher';
 import { TracingDispatcher } from './tracingDispatcher';
 import { WebSocketRouteDispatcher } from './webSocketRouteDispatcher';
 import { WritableStreamDispatcher } from './writableStreamDispatcher';
-import { Recorder } from '../recorder';
 import { RecorderApp } from '../recorder/recorderApp';
 import { ElementHandleDispatcher } from './elementHandlerDispatcher';
 import { JSHandleDispatcher } from './jsHandleDispatcher';
@@ -46,18 +45,18 @@ import type { Request, Response, RouteHandler } from '../network';
 import type { InitScript, Page, PageError } from '../page';
 import type { Disposable } from '../disposable';
 import type { DispatcherScope } from './dispatcher';
-import type * as channels from '@protocol/channels';
-import type { Progress } from '@protocol/progress';
+import type * as channels from '../channels';
+import type { Progress } from '../progress';
 import type { URLMatch } from '@isomorphic/urlMatch';
 
 export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channels.BrowserContextChannel, DispatcherScope> implements channels.BrowserContextChannel {
-  _type_EventTarget = true;
   _type_BrowserContext = true;
   private _context: BrowserContext;
   private _subscriptions = new Set<channels.BrowserContextUpdateSubscriptionParams['event']>();
   _webSocketInterceptionPatterns: channels.BrowserContextSetWebSocketInterceptionPatternsParams['patterns'] = [];
   private _disposables: Disposable[] = [];
   private _dialogHandler: (dialog: Dialog) => boolean;
+  private _dialogClosedListener: (dialog: Dialog) => void;
   private _clockPaused = false;
   private _requestInterceptor: RouteHandler;
   private _interceptionUrlMatchers: URLMatch[] = [];
@@ -139,6 +138,13 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
       return true;
     };
     context.dialogManager.addDialogHandler(this._dialogHandler);
+    this._dialogClosedListener = dialog => {
+      if (!this._shouldDispatchEvent(dialog.page(), 'dialogClosed'))
+        return;
+      const dialogDispatcher = this.connection.existingDispatcher<DialogDispatcher>(dialog) || new DialogDispatcher(this, dialog);
+      this._dispatchEvent('dialogClosed', { dialog: dialogDispatcher });
+    };
+    context.dialogManager.addDialogClosedListener(this._dialogClosedListener);
 
     if (context._browser.options.name === 'chromium' && this._object._browser instanceof CRBrowser) {
       for (const serviceWorker of (context as CRBrowserContext).serviceWorkers())
@@ -251,7 +257,7 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
       const binding = new BindingCallDispatcher(pageDispatcher, params.name, source, args);
       this._dispatchEvent('bindingCall', { binding });
       return binding.promise();
-    });
+    }, undefined, params.noGlobal);
     this._disposables.push(binding);
     return { disposable: new DisposableDispatcher(this, binding) };
   }
@@ -337,7 +343,7 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   }
 
   async storageState(params: channels.BrowserContextStorageStateParams, progress: Progress): Promise<channels.BrowserContextStorageStateResult> {
-    return await this._context.storageState(progress, params.indexedDB);
+    return await this._context.storageState(progress, params);
   }
 
   async setStorageState(params: channels.BrowserContextSetStorageStateParams, progress: Progress): Promise<void> {
@@ -345,18 +351,15 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   }
 
   async close(params: channels.BrowserContextCloseParams, progress: Progress): Promise<void> {
-    progress.metadata.potentiallyClosesScope = true;
     await this._context.close(progress, params);
   }
 
   async enableRecorder(params: channels.BrowserContextEnableRecorderParams, progress: Progress): Promise<void> {
-    await progress.race(RecorderApp.show(this._context, params));
+    await progress.race(RecorderApp.enable(this._context, params));
   }
 
   async disableRecorder(params: channels.BrowserContextDisableRecorderParams, progress: Progress): Promise<void> {
-    const recorder = await progress.race(Recorder.existingForContext(this._context));
-    if (recorder)
-      await progress.race(recorder.setMode('none'));
+    await progress.race(RecorderApp.disable(this._context));
   }
 
   async exposeConsoleApi(params: channels.BrowserContextExposeConsoleApiParams, progress: Progress): Promise<void> {
@@ -406,6 +409,24 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     await progress.race(this._context.clock.setSystemTime(params.timeString ?? params.timeNumber ?? 0));
   }
 
+  async credentialsInstall(params: channels.BrowserContextCredentialsInstallParams, progress: Progress): Promise<channels.BrowserContextCredentialsInstallResult> {
+    await this._context.credentials.install(progress);
+  }
+
+  async credentialsCreate(params: channels.BrowserContextCredentialsCreateParams, progress: Progress): Promise<channels.BrowserContextCredentialsCreateResult> {
+    const credential = await progress.race(this._context.credentials.create(params));
+    return { credential };
+  }
+
+  async credentialsGet(params: channels.BrowserContextCredentialsGetParams, progress: Progress): Promise<channels.BrowserContextCredentialsGetResult> {
+    const credentials = await progress.race(this._context.credentials.get(params));
+    return { credentials };
+  }
+
+  async credentialsDelete(params: channels.BrowserContextCredentialsDeleteParams, progress: Progress): Promise<channels.BrowserContextCredentialsDeleteResult> {
+    await progress.race(this._context.credentials.delete(params.id));
+  }
+
   async updateSubscription(params: channels.BrowserContextUpdateSubscriptionParams, progress: Progress): Promise<void> {
     if (params.enabled)
       this._subscriptions.add(params.event);
@@ -428,6 +449,7 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
 
     // Cleanup properly and leave the page in a good state. Other clients may still connect and use it.
     this._context.dialogManager.removeDialogHandler(this._dialogHandler);
+    this._context.dialogManager.removeDialogClosedListener(this._dialogClosedListener);
     this._interceptionUrlMatchers = [];
     this._context.removeRequestInterceptor(this._requestInterceptor).catch(() => {});
     disposeAll(this._disposables).catch(() => {});

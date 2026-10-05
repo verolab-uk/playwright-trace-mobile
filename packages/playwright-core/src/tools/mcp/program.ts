@@ -16,7 +16,7 @@
 
 import { Option as ProgramOption } from 'commander';
 import * as mcpServer from '../utils/mcp/server';
-import { commaSeparatedList, dotenvFileLoader, enumParser, headerParser, numberParser, resolutionParser, resolveCLIConfigForMCP, semicolonSeparatedList } from './config';
+import { commaSeparatedList, defaultCodegenLanguage, dotenvFileLoader, enumParser, headerParser, numberParser, resolutionParser, resolveCLIConfigForMCP, semicolonSeparatedList } from './config';
 import { setupExitWatchdog } from './watchdog';
 import { createBrowserWithInfo } from './browserFactory';
 import { BrowserBackend } from '../backend/browserBackend';
@@ -42,10 +42,11 @@ export function decorateMCPCommand(command: Command) {
       .option('--cdp-endpoint <endpoint>', 'CDP endpoint to connect to.')
       .option('--cdp-header <headers...>', 'CDP headers to send with the connect request, multiple can be specified.', headerParser)
       .option('--cdp-timeout <timeout>', 'timeout in milliseconds for connecting to CDP endpoint, defaults to 30000ms', numberParser)
-      .option('--codegen <lang>', 'specify the language to use for code generation, possible values: "typescript", "none". Default is "typescript".', enumParser.bind(null, '--codegen', ['none', 'typescript']))
+      .option('--codegen <lang>', `specify the language to use for code generation, possible values: "typescript", "python", "java", "csharp", "none". Default is "${defaultCodegenLanguage}".`, enumParser.bind(null, '--codegen', ['none', 'typescript', 'python', 'java', 'csharp']))
       .option('--config <path>', 'path to the configuration file.')
       .option('--console-level <level>', 'level of console messages to return: "error", "warning", "info", "debug". Each level includes the messages of more severe levels.', enumParser.bind(null, '--console-level', ['error', 'warning', 'info', 'debug']))
       .option('--device <device>', 'device to emulate, for example: "iPhone 15"')
+      .option('--mobile', 'emulate a generic mobile device (Pixel 10 for Chromium, iPhone 17 for WebKit). Mobile pages are usually lighter, which saves tokens. Cannot be combined with --device.')
       .option('--executable-path <path>', 'path to the browser executable.')
       .option('--extension', 'Connect to a running browser instance (Edge/Chrome only). Requires the "Playwright Extension" to be installed.')
       .option('--endpoint <endpoint>', 'Bound browser endpoint to connect to.')
@@ -58,35 +59,36 @@ export function decorateMCPCommand(command: Command) {
       .option('--isolated', 'keep the browser profile in memory, do not save it to disk.')
       .option('--image-responses <mode>', 'whether to send image responses to the client. Can be "allow" or "omit", Defaults to "allow".', enumParser.bind(null, '--image-responses', ['allow', 'omit']))
       .option('--no-sandbox', 'disable the sandbox for all process types that are normally sandboxed.')
-      .option('--output-dir <path>', 'path to the directory for output files.')
-      .option('--output-mode <mode>', 'whether to save snapshots, console messages, network logs to a file or to the standard output. Can be "file" or "stdout". Default is "stdout".', enumParser.bind(null, '--output-mode', ['file', 'stdout']))
+      .option('--output-dir <path>', 'path to the directory for automatically named output files, for example a screenshot taken without an explicit file name. Files with an explicit name are resolved against the workspace root instead and are not affected by this option.')
+      .option('--output-max-size <bytes>', 'Threshold for evicting old output files, in bytes.', numberParser)
       .option('--port <port>', 'port to listen on for SSE transport.')
+      .option('--profile-dir-name <name>', 'name of the profile directory in the user data dir to connect to with --extension, for example "Profile 1". Defaults to the last used profile that has the extension installed.')
       .option('--proxy-bypass <bypass>', 'comma-separated domains to bypass proxy, for example ".com,chromium.org,.domain.com"')
       .option('--proxy-server <proxy>', 'specify proxy server, for example "http://myproxy:3128" or "socks5://myproxy:8080"')
+      .addOption(new ProgramOption('--remote-header <headers...>', 'headers to send with the remote endpoint connect request, multiple can be specified.').argParser(headerParser).hideHelp())
       .option('--sandbox', 'enable the sandbox for all process types that are normally not sandboxed.')
       .option('--save-session', 'Whether to save the Playwright MCP session into the output directory.')
       .option('--secrets <path>', 'path to a file containing secrets in the dotenv format', dotenvFileLoader)
       .option('--shared-browser-context', 'reuse the same browser context between all connected HTTP clients.')
+      .option('--snapshot-boxes', 'include each element\'s bounding box as [box=x,y,width,height] in snapshots. Coordinates are viewport-relative, in CSS pixels.')
       .option('--snapshot-mode <mode>', 'when taking snapshots for responses, specifies the mode to use. Can be "full" or "none". Default is "full".')
       .option('--storage-state <path>', 'path to the storage state file for isolated sessions.')
       .option('--test-id-attribute <attribute>', 'specify the attribute to use for test ids, defaults to "data-testid"')
       .option('--timeout-action <timeout>', 'specify action timeout in milliseconds, defaults to 5000ms', numberParser)
       .option('--timeout-navigation <timeout>', 'specify navigation timeout in milliseconds, defaults to 60000ms', numberParser)
+      .option('--timeout-settle <timeout>', 'how long to wait after each action for triggered work to settle, in milliseconds, defaults to 500ms', numberParser)
       .option('--user-agent <ua string>', 'specify user agent string')
       .option('--user-data-dir <path>', 'path to the user data directory. If not specified, a temporary directory will be created.')
       .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280x720"', resolutionParser.bind(null, '--viewport-size'))
       .addOption(new ProgramOption('--vision', 'Legacy option, use --caps=vision instead').hideHelp())
       .action(async options => {
-
-        // normalize the --no-sandbox option: sandbox = true => nothing was passed, sandbox = false => --no-sandbox was passed.
-        options.sandbox = options.sandbox === true ? undefined : false;
-
         setupExitWatchdog();
 
         if (options.vision) {
           // eslint-disable-next-line no-console
           console.error('The --vision option is deprecated, use --caps=vision instead');
-          options.caps = 'vision';
+          options.caps ??= [];
+          options.caps.push('vision');
         }
 
         if (options.caps?.includes('tracing'))
@@ -106,38 +108,56 @@ export function decorateMCPCommand(command: Command) {
           toolSchemas: tools.map(tool => tool.schema),
           create: async (clientInfo: ClientInfo) => {
             if (useSharedBrowser && !sharedBrowserPromise) {
-              sharedBrowserPromise = (async () => {
+              const promise = (async () => {
                 const { browser, canBind } = await createBrowserWithInfo(config, clientInfo, options);
                 if (canBind)
                   await browser.bind(clientInfo.clientName, { workspaceDir: clientInfo.cwd });
+                browser.once('disconnected', () => {
+                  if (sharedBrowserPromise === promise)
+                    sharedBrowserPromise = undefined;
+                });
                 return browser;
               })().catch(error => {
-                sharedBrowserPromise = undefined;
+                if (sharedBrowserPromise === promise)
+                  sharedBrowserPromise = undefined;
                 throw error;
               });
+              sharedBrowserPromise = promise;
             }
             clientCount++;
-            const { browser, canBind } = sharedBrowserPromise ? { browser: await sharedBrowserPromise, canBind: false } : await createBrowserWithInfo(config, clientInfo, options);
-            if (canBind) {
-              const count = (clientNameCounters.get(clientInfo.clientName) ?? 0) + 1;
-              clientNameCounters.set(clientInfo.clientName, count);
-              const sessionName = count > 1 ? `${clientInfo.clientName} (${count})` : clientInfo.clientName;
-              await browser.bind(sessionName, { workspaceDir: clientInfo.cwd });
-            }
-            const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];
-            return new BrowserBackend(config, browserContext, tools);
-          },
-          disposed: async backend => {
-            clientCount--;
-            if (sharedBrowserPromise && clientCount > 0)
-              return;
+            try {
+              const promise = sharedBrowserPromise;
+              const { browser, canBind } = promise ? { browser: await promise, canBind: false } : await createBrowserWithInfo(config, clientInfo, options);
+              if (canBind) {
+                const count = (clientNameCounters.get(clientInfo.clientName) ?? 0) + 1;
+                clientNameCounters.set(clientInfo.clientName, count);
+                const sessionName = count > 1 ? `${clientInfo.clientName} (${count})` : clientInfo.clientName;
+                await browser.bind(sessionName, { workspaceDir: clientInfo.cwd });
+              }
+              const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];
+              return new BrowserBackend(config, browserContext, tools, async () => {
+                clientCount--;
 
-            testDebug('close browser');
-            sharedBrowserPromise = undefined;
-            const browserContext = (backend as BrowserBackend).browserContext;
-            await browserContext.close().catch(() => { });
-            await browserContext.browser()!.close().catch(() => { });
-          }
+                if (sharedBrowserPromise && clientCount > 0) {
+                  if (config.browser.isolated) {
+                    testDebug('close context');
+                    await browserContext.close().catch(() => { });
+                  }
+                  return;
+                }
+
+                testDebug('close browser');
+                if (sharedBrowserPromise === promise)
+                  sharedBrowserPromise = undefined;
+                await browserContext.close().catch(() => { });
+                await browser.close().catch(() => { });
+              });
+            } catch (error) {
+              // The dispose callback never runs for a failed create.
+              clientCount--;
+              throw error;
+            }
+          },
         };
         await mcpServer.start(factory, config.server);
       });

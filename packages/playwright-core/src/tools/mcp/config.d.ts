@@ -82,9 +82,13 @@ export type Config = {
     cdpTimeout?: number;
 
     /**
-     * Remote endpoint to connect to an existing Playwright server.
+     * Remote endpoint to connect to an existing Playwright server. May be a
+     * WebSocket URL string, or a [ConnectOptions] object that mirrors the
+     * `connectOptions` shape used by the test runner. When passed as an object,
+     * `exposeNetwork`, `headers`, `slowMo`, and `timeout` are forwarded to the
+     * underlying connect call.
      */
-    remoteEndpoint?: string;
+    remoteEndpoint?: string | playwright.ConnectOptions & { endpoint: string };
 
     /**
      * Paths to TypeScript files to add as initialization scripts for Playwright page.
@@ -150,9 +154,16 @@ export type Config = {
   secrets?: Record<string, string>;
 
   /**
-   * The directory to save output files.
+   * The directory for automatically named output files, for example a screenshot taken without an
+   * explicit file name. Files with an explicit name are resolved against the workspace root instead
+   * and are not affected by this option.
    */
   outputDir?: string;
+
+  /**
+   * Threshold for evicting old output files, in bytes.
+   */
+  outputMaxSize?: number;
 
   console?: {
     /**
@@ -201,6 +212,11 @@ export type Config = {
      * Configures default expect timeout: https://playwright.dev/docs/test-timeouts#expect-timeout. Defaults to 5000ms.
      */
     expect?: number;
+
+    /**
+     * How long to wait after each action for triggered work (navigations, requests) to settle before responding. Defaults to 500ms.
+     */
+    settle?: number;
   };
 
   /**
@@ -213,6 +229,12 @@ export type Config = {
      * When taking snapshots for responses, specifies the mode to use.
      */
     mode?: 'full' | 'none';
+
+    /**
+     * Whether to include each element's bounding box as [box=x,y,width,height] in snapshots.
+     * Coordinates are viewport-relative, in CSS pixels (Element.getBoundingClientRect).
+     */
+    boxes?: boolean;
   };
 
   /**
@@ -226,5 +248,5 @@ export type Config = {
   /**
    * Specify the language to use for code generation.
    */
-  codegen?: 'typescript' | 'none';
+  codegen?: 'typescript' | 'python' | 'java' | 'csharp' | 'none';
 };

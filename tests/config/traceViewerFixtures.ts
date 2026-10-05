@@ -31,7 +31,7 @@ type BaseWorkerFixtures = {
 };
 
 export type TraceViewerFixtures = {
-  showTraceViewer: (trace: string | undefined, options?: {host?: string, port?: number, stdin?: boolean}) => Promise<TraceViewerPage>;
+  showTraceViewer: (trace: string | undefined, options?: {host?: string, port?: number, stdin?: boolean, cwd?: string}) => Promise<TraceViewerPage>;
   runAndTrace: (body: () => Promise<void>, optsOverrides?: Parameters<BrowserContext['tracing']['start']>[0]) => Promise<TraceViewerPage>;
 };
 
@@ -53,6 +53,7 @@ class TraceViewerPage {
   settingsDialog: Locator;
   themeSetting: Locator;
   displayCanvasContentSetting: Locator;
+  displayAriaSetting: Locator;
 
   constructor(public page: Page, public process: TestChildProcess) {
     this.actionTitles = page.locator('.action-title');
@@ -72,6 +73,7 @@ class TraceViewerPage {
     this.settingsDialog = page.getByTestId('settings-toolbar-dialog');
     this.themeSetting = this.settingsDialog.getByRole('combobox', { name: 'Theme' });
     this.displayCanvasContentSetting = page.locator('.setting').getByText('Display canvas content');
+    this.displayAriaSetting = page.locator('.setting').getByText('Display Aria');
   }
 
   @step
@@ -153,7 +155,7 @@ export const traceViewerFixtures: Fixtures<TraceViewerFixtures, {}, BaseTestFixt
   showTraceViewer: async ({ playwright, childProcess, browserName }, use, testInfo) => {
     const browsers: Browser[] = [];
     const tracings: any[] = [];
-    await use(async (trace: string | undefined, { host, port, stdin } = {}) => {
+    await use(async (trace: string | undefined, { host, port, stdin, cwd } = {}) => {
       const command = [
         'node',
         path.join(__dirname, '../../packages/playwright-core/cli.js'),
@@ -166,7 +168,7 @@ export const traceViewerFixtures: Fixtures<TraceViewerFixtures, {}, BaseTestFixt
         command.push('--stdin');
       if (trace)
         command.push(trace);
-      const cp = childProcess({ command });
+      const cp = childProcess({ command, cwd });
       await cp.waitForOutput('Listening on');
       const browser = await playwright.chromium.launch({
         ...(browserName === 'chromium' ? {} : { channel: 'chromium' }),

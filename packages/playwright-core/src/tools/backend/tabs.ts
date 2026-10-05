@@ -44,7 +44,7 @@ const browserTabs = defineTool({
         if (params.url) {
           const url = await tab.checkUrlAndNavigate(params.url);
           response.setIncludeSnapshot();
-          response.addCode(`await page.goto('${url}');`);
+          response.addAction({ name: 'navigate', url });
         }
         break;
       }
