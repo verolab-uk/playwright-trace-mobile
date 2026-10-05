@@ -1,13 +1,9 @@
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const require = createRequire(import.meta.url);
-const playwrightCoreDir = path.dirname(require.resolve('playwright-core/package.json'));
-const { jpegjs } = require(path.join(playwrightCoreDir, 'lib/utilsBundle.js'));
-const { yazl } = require(path.join(playwrightCoreDir, 'lib/zipBundle.js'));
-const { ZipFile } = require(path.join(playwrightCoreDir, 'lib/server/utils/zipFile.js'));
+import jpegjs from 'jpeg-js';
+import yauzl from 'yauzl';
+import yazl from 'yazl';
 
 const ACTION_MARGIN_MS = Number(process.env.TRACE_COMPACT_ACTION_MARGIN_MS ?? 1000);
 const HASH_WIDTH = 80;
@@ -24,6 +20,7 @@ type TraceEvent = {
   startTime?: number;
   endTime?: number;
   sha1?: string;
+  file?: string;
   timestamp?: number;
   pageId?: string;
 };
@@ -31,8 +28,16 @@ type TraceEvent = {
 type ScreencastFrame = {
   entryName: string;
   index: number;
-  event: TraceEvent & { sha1: string; timestamp: number };
+  resourceName: string;
+  event: TraceEvent & { timestamp: number };
 };
+
+// Playwright 1.63+ stores frames under `file`; older versions under `resources/<sha1>`.
+function screencastResourceName(event: TraceEvent) {
+  if (event.type !== 'screencast-frame') return;
+  if (event.file) return event.file;
+  if (event.sha1) return `resources/${event.sha1}`;
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -119,12 +124,16 @@ async function compactTrace(traceFile) {
           actionIntervals.push([startTime - ACTION_MARGIN_MS, startTime + ACTION_MARGIN_MS]);
           actionIntervals.push([event.endTime - ACTION_MARGIN_MS, event.endTime + ACTION_MARGIN_MS]);
         }
-      } else if (event.type === 'screencast-frame' && event.sha1 && typeof event.timestamp === 'number') {
-        frames.push({
-          entryName,
-          index,
-          event: event as TraceEvent & { sha1: string; timestamp: number },
-        });
+      } else {
+        const resourceName = screencastResourceName(event);
+        if (resourceName && typeof event.timestamp === 'number') {
+          frames.push({
+            entryName,
+            index,
+            resourceName,
+            event: event as TraceEvent & { timestamp: number },
+          });
+        }
       }
     }
   }
@@ -147,14 +156,13 @@ async function compactTrace(traceFile) {
     framesByPage.set(pageId, pageFrames);
   }
 
-  const droppedSha1s = new Set();
+  const droppedResources = new Set<string>();
   for (const pageFrames of framesByPage.values()) {
     pageFrames.sort((a, b) => b.event.timestamp - a.event.timestamp);
     let nextKeptFingerprint: FrameFingerprint | undefined;
 
     for (const frame of pageFrames) {
-      const resourceName = `resources/${frame.event.sha1}`;
-      const resource = entries.get(resourceName);
+      const resource = entries.get(frame.resourceName);
       if (!resource) continue;
 
       const fingerprint = jpegFingerprint(resource);
@@ -165,7 +173,7 @@ async function compactTrace(traceFile) {
       }
 
       if (nextKeptFingerprint && isVisuallySimilar(fingerprint, nextKeptFingerprint)) {
-        droppedSha1s.add(frame.event.sha1);
+        droppedResources.add(frame.resourceName);
         continue;
       }
 
@@ -173,7 +181,7 @@ async function compactTrace(traceFile) {
     }
   }
 
-  if (!droppedSha1s.size)
+  if (!droppedResources.size)
     return {
       originalBytes,
       compactedBytes: originalBytes,
@@ -191,13 +199,13 @@ async function compactTrace(traceFile) {
         compactedLines.push(line);
         continue;
       }
-      if (event.type === 'screencast-frame' && droppedSha1s.has(event.sha1)) continue;
+      if (droppedResources.has(screencastResourceName(event))) continue;
       compactedLines.push(line);
     }
     entries.set(entryName, Buffer.from(`${compactedLines.join('\n')}\n`));
   }
 
-  for (const sha1 of droppedSha1s) entries.delete(`resources/${sha1}`);
+  for (const resourceName of droppedResources) entries.delete(resourceName);
 
   const tempFile = `${traceFile}.compact-${process.pid}.tmp`;
   await writeZipEntries(tempFile, entries);
@@ -206,19 +214,37 @@ async function compactTrace(traceFile) {
     originalBytes,
     compactedBytes: fs.statSync(traceFile).size,
     frames: frames.length,
-    droppedFrames: droppedSha1s.size,
+    droppedFrames: droppedResources.size,
   };
 }
 
-async function readZipEntries(fileName) {
-  const zipFile = new ZipFile(fileName);
-  try {
-    const entries = new Map();
-    for (const entryName of await zipFile.entries()) entries.set(entryName, await zipFile.read(entryName));
-    return entries;
-  } finally {
-    zipFile.close();
-  }
+function readZipEntries(fileName): Promise<Map<string, Buffer>> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(fileName, { lazyEntries: true }, (error, zipFile) => {
+      if (error) return reject(error);
+      const entries = new Map<string, Buffer>();
+      const fail = (error) => {
+        zipFile.close();
+        reject(error);
+      };
+      zipFile.on('error', fail);
+      zipFile.on('end', () => resolve(entries));
+      zipFile.on('entry', (entry) => {
+        if (entry.fileName.endsWith('/')) return zipFile.readEntry();
+        zipFile.openReadStream(entry, (error, stream) => {
+          if (error) return fail(error);
+          const chunks: Buffer[] = [];
+          stream.on('data', (chunk) => chunks.push(chunk));
+          stream.on('error', fail);
+          stream.on('end', () => {
+            entries.set(entry.fileName, Buffer.concat(chunks));
+            zipFile.readEntry();
+          });
+        });
+      });
+      zipFile.readEntry();
+    });
+  });
 }
 
 async function writeZipEntries(fileName, entries) {
@@ -372,4 +398,4 @@ if (isMain)
     process.exit(1);
   });
 
-export { compactTrace };
+export { compactTrace, readZipEntries };
