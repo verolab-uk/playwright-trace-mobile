@@ -6,12 +6,9 @@ on:
       - main
     paths:
       - '.github/workflows/deploy-trace-viewer.yml'
-      - 'packages/trace-viewer/**'
-      - 'packages/playwright-core/src/**'
-      - 'packages/protocol/**'
-      - 'packages/isomorphic/**'
-      - 'packages/trace/**'
-      - 'packages/web/**'
+      - 'packages/**'
+      - 'UPSTREAM'
+      - 'vite.config.ts'
       - 'package.json'
       - 'package-lock.json'
   workflow_dispatch:
@@ -39,16 +36,14 @@ jobs:
         run: npm ci
 
       - name: Build trace viewer app
-        working-directory: packages/trace-viewer
-        run: npx vite build --config vite.config.ts
+        run: npm run build
 
       - name: Package runtime
         run: |
           set -euo pipefail
           mkdir -p public
-          cd packages/playwright-core/lib/vite/traceViewer
-          tar -czf "$GITHUB_WORKSPACE/public/trace-viewer.tar.gz" .
-          cp -R . "$GITHUB_WORKSPACE/public/viewer"
+          tar -czf public/trace-viewer.tar.gz -C dist .
+          cp -R dist public/viewer
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
