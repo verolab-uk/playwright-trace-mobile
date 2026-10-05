@@ -1,14 +1,14 @@
-name: Compact traces action
+name: Test scripts
 
 on:
   push:
     paths:
       - '.github/actions/compact-traces/**'
-      - '.github/workflows/compact-traces.yml'
+      - '.github/workflows/test-scripts.yml'
   pull_request:
     paths:
       - '.github/actions/compact-traces/**'
-      - '.github/workflows/compact-traces.yml'
+      - '.github/workflows/test-scripts.yml'
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - name: Unit tests
+      - name: Test scripts
         run: bun run test
       - name: Run the action on an empty directory
         uses: ./.github/actions/compact-traces
