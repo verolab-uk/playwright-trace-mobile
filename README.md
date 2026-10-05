@@ -30,6 +30,8 @@ npx playwright install chromium
 npm test                            # records a trace, opens it in dist/ at phone size
 ```
 
+CI comments a preview link on each PR that opens the test trace in that PR's build.
+
 Mobile changes live in `packages/trace-viewer`. The other `packages/` directories are upstream sources the viewer builds from.
 
 Compact-traces action tests: `cd .github/actions/compact-traces && bun install && bun run test`.

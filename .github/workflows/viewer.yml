@@ -5,10 +5,15 @@ on:
     branches:
       - main
   pull_request:
+    types: [opened, reopened, synchronize, closed]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: viewer-${{ github.ref }}
 
 jobs:
   test:
@@ -16,11 +21,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: github.event.action != 'closed'
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
+      - if: github.event.action != 'closed'
+        run: npm ci
+      - if: github.event.action != 'closed'
+        run: npm run typecheck
+      - if: github.event.action != 'closed'
+        run: npm run build
+      - if: github.event.action != 'closed'
+        run: npx playwright install --with-deps chromium
+      - if: github.event.action != 'closed'
+        run: npm test
+
+      # The PR preview opens the trace recorded by the tests in the built viewer.
+      - name: Assemble PR preview
+        if: github.event_name == 'pull_request' && github.event.action != 'closed'
+        run: |
+          set -euo pipefail
+          mkdir -p preview/viewer/traces
+          cp -R dist/. preview/viewer/
+          cp tests/.traces/sample.zip preview/viewer/traces/
+          echo '<meta http-equiv="refresh" content="0; url=viewer/index.html?trace=traces/sample.zip">' > preview/index.html
+      - name: Publish PR preview
+        if: github.event_name == 'pull_request'
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: preview
