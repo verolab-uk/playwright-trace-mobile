@@ -22,6 +22,16 @@ Other repositories should not build this viewer. After `npx playwright test` cre
 
 The resulting Playwright report keeps its original `trace/index.html?trace=...` links, but those links open this mobile viewer. Downstream repositories do not need GitHub tokens; they download the public runtime tarball from this repository release.
 
+To make traces smaller before publishing the report, remove repeated screencast frames first. Frames near actions and frames that visibly change are kept:
+
+```yaml
+- uses: verolab-uk/playwright-trace-mobile/.github/actions/compact-traces@main
+  with:
+    paths: test-results playwright-report
+```
+
+Its tests live next to it in `.github/actions/compact-traces` (`bun install && bun run test`).
+
 ## Upstream README
 
 # 🎭 Playwright
