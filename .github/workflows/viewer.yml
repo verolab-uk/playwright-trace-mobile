@@ -2,6 +2,8 @@ name: Trace viewer
 
 on:
   push:
+    branches-ignore:
+      - ci-screenshots
   workflow_dispatch:
 
 permissions:
@@ -21,40 +23,62 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm test
-
-      # The preview opens the trace recorded by the tests in the built viewer.
-      - name: Assemble preview
-        run: |
-          set -euo pipefail
-          mkdir -p preview/viewer/traces
-          cp -R dist/. preview/viewer/
-          cp tests/.traces/sample.zip preview/viewer/traces/
-          echo '<meta http-equiv="refresh" content="0; url=viewer/index.html?trace=traces/sample.zip">' > preview/index.html
       - uses: actions/upload-artifact@v4
         with:
-          name: preview
-          path: preview
+          name: screenshots
+          path: screenshots
           if-no-files-found: error
 
-  # Each branch gets its own Cloudflare Pages preview URL.
-  preview:
+  # Stores the screenshots on the ci-screenshots branch and shows them on the
+  # branch's open PR, so each push can be checked by eye.
+  screenshots:
     needs: test
     runs-on: ubuntu-latest
-    environment:
-      name: preview
-      url: ${{ steps.deploy.outputs.pages-deployment-alias-url || steps.deploy.outputs.deployment-url }}
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: ci-screenshots
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.ref_name }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: preview
-          path: preview
-      - id: deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy preview --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=${{ github.ref_name }}
-      - name: Show preview link
-        env:
-          URL: ${{ steps.deploy.outputs.pages-deployment-alias-url || steps.deploy.outputs.deployment-url }}
-        run: echo "Preview -> $URL" >> "$GITHUB_STEP_SUMMARY"
+          name: screenshots
+          path: ${{ runner.temp }}/screenshots
+      - name: Store screenshots
+        run: |
+          set -euo pipefail
+          if git fetch --quiet --depth 1 origin ci-screenshots; then
+            git switch --quiet -C ci-screenshots FETCH_HEAD
+          else
+            git switch --quiet --orphan ci-screenshots
+          fi
+          mkdir -p "$GITHUB_SHA"
+          cp "$RUNNER_TEMP"/screenshots/*.png "$GITHUB_SHA"/
+          git add "$GITHUB_SHA"
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit --quiet -m "Screenshots for $GITHUB_SHA"
+          git push --quiet origin ci-screenshots
+      - name: Show screenshots
+        run: |
+          set -euo pipefail
+          base="https://raw.githubusercontent.com/$GH_REPO/ci-screenshots/$GITHUB_SHA"
+          marker='<!-- viewer-screenshots -->'
+          body="$marker
+          Trace viewer at $GITHUB_SHA, phone portrait and landscape:
+
+          <img src=\"$base/portrait.png\" width=\"260\"> <img src=\"$base/landscape.png\" width=\"560\">"
+          printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
+
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          [[ -n "$pr" ]] || exit 0
+          comment=$(gh api "repos/$GH_REPO/issues/$pr/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n 1)
+          if [[ -n "$comment" ]]; then
+            gh api -X PATCH "repos/$GH_REPO/issues/comments/$comment" -f body="$body" > /dev/null
+          else
+            gh pr comment "$pr" --body "$body"
+          fi

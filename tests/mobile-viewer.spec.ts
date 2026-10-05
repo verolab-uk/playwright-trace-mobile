@@ -38,3 +38,16 @@ test('mobile workbench fits the visual viewport in portrait', async ({ page }) =
     return box && { width: Math.round(box.width), height: Math.round(box.height) };
   }).toEqual({ width: 390, height: 844 });
 });
+
+// CI posts these on the PR so the change can be checked by eye.
+for (const [name, viewport] of [['portrait', { width: 390, height: 844 }], ['landscape', { width: 844, height: 390 }]] as const) {
+  test(`screenshot in ${name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    await page.goto(`/index.html?trace=/traces/${traceName}`);
+    await expect(page.locator('.workbench-mobile-landscape')).toBeVisible();
+    await expect(page.getByText('Click me').first()).toBeVisible();
+    await page.screenshot({ path: path.join(import.meta.dirname, '..', 'screenshots', `${name}.png`) });
+    await context.close();
+  });
+}

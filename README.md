@@ -30,7 +30,7 @@ npx playwright install chromium
 npm test                            # records a trace, opens it in dist/ at phone size
 ```
 
-CI deploys every pushed branch to its own Cloudflare Pages preview URL, which opens the test trace in that branch's build. PRs link it as "View deployment".
+On every push, CI posts phone screenshots of the viewer on the branch's PR (`npm test` writes them to `screenshots/`).
 
 Mobile changes live in `packages/trace-viewer`. The other `packages/` directories are upstream sources the viewer builds from.
 
