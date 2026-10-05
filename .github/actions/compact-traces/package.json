@@ -1,0 +1,15 @@
+{
+  "name": "compact-traces",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bddgen && playwright test"
+  },
+  "dependencies": {
+    "playwright-core": "1.59.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "playwright-bdd": "9.2.1"
+  }
+}

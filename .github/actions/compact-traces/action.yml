@@ -1,0 +1,24 @@
+name: Compact Playwright traces
+description: Remove repeated screencast frames from Playwright trace.zip files so reports open faster on mobile.
+
+inputs:
+  paths:
+    description: Space-separated files or directories to search for trace.zip files.
+    required: false
+    default: test-results playwright-report
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: bun install --frozen-lockfile --production
+
+    - name: Compact traces
+      shell: bash
+      env:
+        TRACE_PATHS: ${{ inputs.paths }}
+      run: bun "$GITHUB_ACTION_PATH/compact-trace-screencast.ts" $TRACE_PATHS
