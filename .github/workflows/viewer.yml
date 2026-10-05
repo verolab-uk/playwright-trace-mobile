@@ -2,51 +2,96 @@ name: Trace viewer
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize, closed]
+    branches-ignore:
+      - gh-pages
+  delete:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-
-concurrency:
-  group: viewer-${{ github.ref }}
+  contents: read
 
 jobs:
   test:
+    if: github.event_name != 'delete'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        if: github.event.action != 'closed'
         with:
           node-version: 24
           cache: npm
-      - if: github.event.action != 'closed'
-        run: npm ci
-      - if: github.event.action != 'closed'
-        run: npm run typecheck
-      - if: github.event.action != 'closed'
-        run: npm run build
-      - if: github.event.action != 'closed'
-        run: npx playwright install --with-deps chromium
-      - if: github.event.action != 'closed'
-        run: npm test
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
 
-      # The PR preview opens the trace recorded by the tests in the built viewer.
-      - name: Assemble PR preview
-        if: github.event_name == 'pull_request' && github.event.action != 'closed'
+      # The preview opens the trace recorded by the tests in the built viewer.
+      - name: Assemble preview
         run: |
           set -euo pipefail
           mkdir -p preview/viewer/traces
           cp -R dist/. preview/viewer/
           cp tests/.traces/sample.zip preview/viewer/traces/
           echo '<meta http-equiv="refresh" content="0; url=viewer/index.html?trace=traces/sample.zip">' > preview/index.html
-      - name: Publish PR preview
-        if: github.event_name == 'pull_request'
-        uses: rossjrw/pr-preview-action@v1
+      - uses: actions/upload-artifact@v4
         with:
-          source-dir: preview
+          name: preview
+          path: preview
+          if-no-files-found: error
+
+  # Publishes each branch to https://<owner>.github.io/<repo>/preview/<branch>/.
+  preview:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: gh-pages
+    environment:
+      name: preview
+      url: ${{ steps.slug.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: preview
+          path: preview
+      - id: slug
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          slug=${BRANCH//\//-}
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "url=https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/preview/$slug/" >> "$GITHUB_OUTPUT"
+      - uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: preview
+          target-folder: preview/${{ steps.slug.outputs.slug }}
+          clean: true
+      - name: Show preview link
+        env:
+          URL: ${{ steps.slug.outputs.url }}
+        run: echo "Preview -> $URL" >> "$GITHUB_STEP_SUMMARY"
+
+  remove-preview:
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: gh-pages
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          BRANCH: ${{ github.event.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin gh-pages:gh-pages || exit 0
+          git switch --quiet gh-pages
+          slug=${BRANCH//\//-}
+          [[ -d "preview/$slug" ]] || exit 0
+          git rm -rq "preview/$slug"
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Remove preview for $BRANCH"
+          git push --quiet origin gh-pages

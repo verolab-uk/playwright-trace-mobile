@@ -30,7 +30,7 @@ npx playwright install chromium
 npm test                            # records a trace, opens it in dist/ at phone size
 ```
 
-CI comments a preview link on each PR that opens the test trace in that PR's build.
+CI publishes every pushed branch to `https://verolab-uk.github.io/playwright-trace-mobile/preview/<branch>/`, which opens the test trace in that branch's build. PRs link it as "View deployment".
 
 Mobile changes live in `packages/trace-viewer`. The other `packages/` directories are upstream sources the viewer builds from.
 
