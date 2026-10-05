@@ -4,7 +4,7 @@ Private Verolab fork for a mobile-focused Playwright trace viewer.
 
 - Upstream: https://github.com/microsoft/playwright
 - Starting point: `packages/trace-viewer`
-- Imported upstream commit: `cb3312bc04836eb0808ee97bc13cdbe820d78ac1`
+- Imported upstream commit: `1b025d7e20a026371cd5f98ba0cdce48892737c8` (v1.63.0)
 - License: Apache-2.0, inherited from Playwright
 
 

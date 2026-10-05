@@ -79,6 +79,7 @@ npx playwright test --ui
 | Option | Description |
 | :--- | :--- |
 | Non-option arguments | Each argument is treated as a regular expression matched against the full test file path. Only tests from files matching the pattern will be executed. Special symbols like `$` or `*` should be escaped with `\`. In many shells/terminals you may need to quote the arguments. |
+| `--add-reporter <reporter>` | Reporter to add on top of the reporters configured in the config file, comma-separated. Can be a built-in reporter name or a path to a custom reporter file. Unlike `--reporter`, this keeps the configured reporters instead of replacing them. |
 | `-c <file>` or `--config <file>` | Configuration file, or a test directory with optional "playwright.config.&#123;m,c&#125;?&#123;js,ts&#125;". Defaults to `playwright.config.ts` or `playwright.config.js` in the current directory. |
 | `--debug` | Run tests with Playwright Inspector. Shortcut for `PWDEBUG=1` environment variable and `--timeout=0 --max-failures=1 --headed --workers=1` options. |
 | `--fail-on-flaky-tests` | Fail if any test is flagged as flaky (default: false). |
@@ -86,11 +87,12 @@ npx playwright test --ui
 | `--fully-parallel` | Run all tests in parallel (default: false). |
 | `--global-timeout <timeout>` | Maximum time this test suite can run in milliseconds (default: unlimited). |
 | `-g <grep>` or `--grep <grep>` | Only run tests matching this regular expression (default: ".*"). |
-| `--grep-invert <grep>` | Only run tests that do not match this regular expression. |
+| `-G <grep>` or `--grep-invert <grep>` | Only run tests that do not match this regular expression. |
 | `--headed` | Run tests in headed browsers (default: headless). |
 | `--ignore-snapshots` | Ignore screenshot and snapshot expectations. |
 | `-j <workers>` or `--workers <workers>` | Number of concurrent workers or percentage of logical CPU cores, use 1 to run in a single worker (default: 50%). |
 | `--last-failed` | Only re-run the failures. |
+| `--last-failed-file <file>` | Override the default last-run JSON path for `--last-failed` (default: `<outputDir>/.last-run.json`). Same as `PLAYWRIGHT_LAST_RUN_OUTPUT_FILE` environment variable. |
 | `--list` | Collect all the tests and report them, but do not run. |
 | `--max-failures <N>` or `-x` | Stop after the first `N` failures. Passing `-x` stops after the first failure. |
 | `--no-deps` | Do not run project dependencies. |
@@ -218,6 +220,7 @@ npx playwright install --with-deps
 | `--dry-run` | Don't perform installation, just print information |
 | `--only-shell` | Only install chromium-headless-shell instead of full Chromium |
 | `--no-shell` | Don't install chromium-headless-shell |
+| `--no-remove` | Don't remove unused browsers |
 
 #### Install Deps Options
 

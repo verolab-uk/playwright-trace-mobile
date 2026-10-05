@@ -21,20 +21,20 @@ import * as React from 'react';
 import type { Boundaries } from './geometry';
 import { FilmStrip } from './filmStrip';
 import type { FilmStripPreviewPoint } from './filmStrip';
-import type { ActionTraceEventInContext, TraceModel } from '@isomorphic/trace/traceModel';
+import type { TraceModel } from '@isomorphic/trace/traceModel';
+import type { ActionEntry } from '@isomorphic/trace/entries';
 import './timeline.css';
-import type { Language } from '@isomorphic/locatorGenerators';
 import type { ActionGroup } from '@isomorphic/protocolFormatter';
 
 export const Timeline: React.FunctionComponent<{
   model: TraceModel | undefined,
   boundaries: Boundaries,
-  onSelected: (action: ActionTraceEventInContext) => void,
+  onSelected: (action: ActionEntry) => void,
   selectedTime: Boundaries | undefined,
   setSelectedTime: (time: Boundaries | undefined) => void,
-  sdkLanguage: Language,
+  highlightedTime?: Boundaries,
   scrubber?: React.ReactNode,
-}> = ({ model, boundaries, onSelected, selectedTime, setSelectedTime, sdkLanguage, scrubber }) => {
+}> = ({ model, boundaries, onSelected, selectedTime, setSelectedTime, highlightedTime, scrubber }) => {
   const [measure, ref] = useMeasure<HTMLDivElement>();
   const [dragWindow, setDragWindow] = React.useState<{ startX: number, endX: number, pivot?: number, type: 'resize' | 'move' } | undefined>();
   const [previewPoint, setPreviewPoint] = React.useState<FilmStripPreviewPoint | undefined>();
@@ -54,6 +54,14 @@ export const Timeline: React.FunctionComponent<{
   }, [selectedTime, boundaries, dragWindow, measure]);
 
   const actions = React.useMemo(() => model?.filteredActions(actionsFilter), [model, actionsFilter]);
+
+  const highlight = React.useMemo(() => {
+    if (!highlightedTime)
+      return undefined;
+    const left = timeToPosition(measure.width, boundaries, highlightedTime.minimum);
+    const right = timeToPosition(measure.width, boundaries, highlightedTime.maximum);
+    return { left, width: Math.max(2, right - left) };
+  }, [highlightedTime, boundaries, measure]);
 
   const onMouseDown = React.useCallback((event: React.MouseEvent) => {
     setPreviewPoint(undefined);
@@ -146,10 +154,8 @@ export const Timeline: React.FunctionComponent<{
     if (!ref.current)
       return;
     const x = event.clientX - ref.current.getBoundingClientRect().left;
-    const time = positionToTime(measure.width, boundaries, x);
-    const action = actions?.findLast(action => action.startTime <= time);
-    setPreviewPoint({ x, clientY: event.clientY, action, sdkLanguage });
-  }, [boundaries, measure, actions, ref, sdkLanguage]);
+    setPreviewPoint({ x, clientY: event.clientY });
+  }, [ref]);
 
   const onMouseLeave = React.useCallback(() => {
     setPreviewPoint(undefined);
@@ -179,6 +185,7 @@ export const Timeline: React.FunctionComponent<{
       }</div>
       <FilmStrip boundaries={boundaries} previewPoint={previewPoint} />
       {scrubber}
+      {highlight && <div className='timeline-highlight' style={{ left: highlight.left, width: highlight.width }}></div>}
       {selectedTime && <div className='timeline-window'>
         <div className='timeline-window-curtain left' style={{ width: curtainLeft }}></div>
         <div className='timeline-window-resizer' style={{ left: -5 }}></div>

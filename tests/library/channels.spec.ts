@@ -76,7 +76,9 @@ it('should scope context handles', async ({ browserType, server, expectScopeStat
               ] },
             ] },
             { _guid: 'debugger', objects: [] },
-            { _guid: 'request-context', objects: [] },
+            { _guid: 'request-context', objects: [
+              { _guid: 'tracing', objects: [] },
+            ] },
             { _guid: 'tracing', objects: [] }
           ] },
         ] },
@@ -164,7 +166,9 @@ it('should scope browser handles', async ({ browserType, expectScopeState }) => 
           _guid: 'browser', objects: [
             { _guid: 'browser-context', objects: [
               { _guid: 'debugger', objects: [] },
-              { _guid: 'request-context', objects: [] },
+              { _guid: 'request-context', objects: [
+                { _guid: 'tracing', objects: [] },
+              ] },
               { _guid: 'tracing', objects: [] },
             ] },
           ]
@@ -208,7 +212,9 @@ it('should not generate dispatchers for subresources w/o listeners', async ({ pa
                 ]
               },
               { _guid: 'debugger', objects: [] },
-              { _guid: 'request-context', objects: [] },
+              { _guid: 'request-context', objects: [
+                { _guid: 'tracing', objects: [] },
+              ] },
               { _guid: 'tracing', objects: [] }
             ] },
           ]
@@ -221,7 +227,7 @@ it('should not generate dispatchers for subresources w/o listeners', async ({ pa
   });
 });
 
-it('should work with the domain module', async ({ browserType, server, browserName, channel }) => {
+it('should work with the domain module', async ({ browserType, server, channel }) => {
   const local = domain.create();
   local.run(() => { });
   let err;
@@ -241,10 +247,7 @@ it('should work with the domain module', async ({ browserType, server, browserNa
     new WebSocket('ws://' + host + '/bogus-ws');
   }, server.HOST);
   const message = await result;
-  if (browserName === 'firefox')
-    expect(message).toBe('CLOSE_ABNORMAL');
-  else
-    expect(message).toContain(channel?.includes('msedge') ? '' : ': 400');
+  expect(message).toContain(channel?.includes('msedge') ? '' : ': 400');
 
   await browser.close();
 
@@ -311,7 +314,12 @@ it('exposeFunction should not leak', async ({ page, expectScopeState, server }) 
                   },
                   {
                     '_guid': 'request-context',
-                    'objects': [],
+                    'objects': [
+                      {
+                        '_guid': 'tracing',
+                        'objects': [],
+                      },
+                    ],
                   },
                   {
                     '_guid': 'tracing',

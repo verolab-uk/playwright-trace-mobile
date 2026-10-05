@@ -21,7 +21,6 @@ const playwright = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
 const { parseApi } = require('./api_parser');
-const missingDocs = require('./missingDocs');
 const md = require('../markdown');
 const docs = require('./documentation');
 const toKebabCase = require('lodash/kebabCase')
@@ -91,7 +90,7 @@ async function run() {
 
   // Update device descriptors
   {
-    const devicesDescriptorsSourceFile = path.join(PROJECT_DIR, 'packages', 'playwright-core', 'src', 'server', 'deviceDescriptorsSource.json')
+    const devicesDescriptorsSourceFile = path.join(PROJECT_DIR, 'packages', 'isomorphic', 'deviceDescriptorsSource.json')
     const devicesDescriptors = require(devicesDescriptorsSourceFile)
     for (const deviceName of Object.keys(devicesDescriptors)) {
       switch (devicesDescriptors[deviceName].defaultBrowserType) {
@@ -269,25 +268,12 @@ async function run() {
     }
   }
 
-  // Check for missing docs
-  {
-    const apiDocumentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'))
-        .mergeWith(parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'electron-api'), path.join(PROJECT_DIR, 'docs', 'src', 'api', 'params.md')))
-        .mergeWith(parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'mobile-api'), path.join(PROJECT_DIR, 'docs', 'src', 'api', 'params.md')));
-    apiDocumentation.filterForLanguage('js');
-    const srcClient = path.join(PROJECT_DIR, 'packages', 'playwright-core', 'src', 'client');
-    const sources = fs.readdirSync(srcClient).map(n => path.join(srcClient, n));
-    const errors = missingDocs(apiDocumentation, sources, path.join(srcClient, 'api.ts'));
-    if (errors.length) {
-      console.log('============================');
-      console.log('ERROR: missing documentation:');
-      errors.forEach(e => console.log(e));
-      console.log('============================')
-      process.exit(1);
-    }
-  }
-
   if (dirtyFiles.size) {
+    if (process.argv.includes('--allow-dirty')) {
+      console.log('Regenerated files:');
+      [...dirtyFiles].forEach(f => console.log(f));
+      process.exit(0);
+    }
     console.log('============================')
     console.log('ERROR: generated files have changed, this is only error if happens in CI:');
     [...dirtyFiles].forEach(f => console.log(f));

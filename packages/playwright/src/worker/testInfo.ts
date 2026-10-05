@@ -18,15 +18,15 @@ import fs from 'fs';
 import path from 'path';
 
 import { ManualPromise } from '@isomorphic/manualPromise';
-import { captureRawStack, stringifyStackFrames } from '@isomorphic/stackTrace';
+import { captureRawStack, stringifyStackFrames, filteredStackTrace } from '@utils/stackTrace';
 import { escapeWithQuotes } from '@isomorphic/stringUtils';
 import { monotonicTime } from '@isomorphic/time';
 import { createGuid } from '@utils/crypto';
-import { sanitizeForFilePath } from '@utils/fileUtils';
+import { sanitizeForFilePath, trimLongString } from '@utils/fileUtils';
 import { currentZone } from '@utils/zones';
 
 import { TimeoutManager, TimeoutManagerError } from './timeoutManager';
-import { addSuffixToFilePath, filteredStackTrace, getContainedPath, normalizeAndSaveAttachment, sanitizeFilePathBeforeExtension, trimLongString, windowsFilesystemFriendlyLength } from '../util';
+import { addSuffixToFilePath, getContainedPath, normalizeAndSaveAttachment, sanitizeFilePathBeforeExtension, windowsFilesystemFriendlyLength } from '../util';
 import { TestTracing } from './testTracing';
 import { testInfoError } from './util';
 import { ipc, transform } from '../common';
@@ -35,16 +35,15 @@ import type { RunnableDescription } from './timeoutManager';
 import type { FullProject, TestInfo, TestInfoError, TestStatus, TestStepInfo, TestAnnotation } from '../../types/test';
 import type { FullConfig, Location } from '../../types/testReporter';
 import type { config as commonConfig, FullConfigInternal, test as testNs } from '../common';
-import type { StackFrame } from '@protocol/channels';
+import type { StackFrame } from '@utils/stackTrace';
 
 export type TestStepCategory = 'expect' | 'fixture' | 'hook' | 'pw:api' | 'test.step' | 'test.attach';
 
 interface TestStepData {
   title: string;
-  shortTitle?: string;
+  subtitle?: string;
   category: TestStepCategory;
   location?: Location;
-  apiName?: string;
   params?: Record<string, any>;
   box?: boolean;
   // steps with any defined group are hidden from the report
@@ -295,14 +294,13 @@ export class TestInfoImpl implements TestInfo {
         parentStep = this._parentStep();
     }
 
-    const filteredStack = filteredStackTrace(captureRawStack());
     let boxedStack = parentStep?.boxedStack;
     let location = data.location;
     if (!boxedStack && data.box) {
-      boxedStack = filteredStack.slice(1);
-      location = location || boxedStack[0];
+      boxedStack = filteredStackTrace(captureRawStack()).slice(1);
+      location ??= boxedStack[0];
     }
-    location = location || filteredStack[0];
+    location ??= filteredStackTrace(captureRawStack())[0];
 
     const step: TestStepInternal = {
       ...data,
@@ -378,7 +376,9 @@ export class TestInfoImpl implements TestInfo {
         stepId,
         parentStepId: parentStep ? parentStep.stepId : undefined,
         title: step.title,
+        subtitle: step.subtitle,
         category: step.category,
+        params: toReportedParams(step.params),
         wallTime: Date.now(),
         location: step.location,
       };
@@ -388,7 +388,8 @@ export class TestInfoImpl implements TestInfo {
       this._tracing.appendBeforeActionForStep({
         stepId,
         parentId: parentStep?.stepId,
-        title: step.shortTitle ?? step.title,
+        title: step.title,
+        subtitle: step.subtitle,
         category: step.category,
         params: step.params,
         stack: step.location ? [step.location] : [],
@@ -413,15 +414,23 @@ export class TestInfoImpl implements TestInfo {
       this.status = 'interrupted';
   }
 
-  _failWithError(error: Error | unknown) {
+  _failWithError(root: Error | unknown) {
     if (this.status === 'passed' || this.status === 'skipped')
-      this.status = error instanceof TimeoutManagerError ? 'timedOut' : 'failed';
-    const serialized = testInfoError(error);
-    const step: TestStepInternal | undefined = typeof error === 'object' ? (error as any)?.[stepSymbol] : undefined;
-    if (step && step.boxedStack)
-      serialized.stack = `${(error as Error).name}: ${(error as Error).message}\n${stringifyStackFrames(step.boxedStack).join('\n')}`;
-    this.errors.push(serialized);
-    this._tracing.appendForError(serialized);
+      this.status = root instanceof TimeoutManagerError ? 'timedOut' : 'failed';
+    const visit = (error: Error | unknown) => {
+      const serialized = testInfoError(error);
+      const step: TestStepInternal | undefined = error === root && typeof error === 'object' ? (error as any)?.[stepSymbol] : undefined;
+      if (step && step.boxedStack)
+        serialized.stack = `${(error as Error).name}: ${(error as Error).message}\n${stringifyStackFrames(step.boxedStack).join('\n')}`;
+      this.errors.push(serialized);
+      this._tracing.appendForError(serialized);
+      const children = (error as any)?.errors;
+      if (Array.isArray(children)) {
+        for (const child of children)
+          visit(child);
+      }
+    };
+    visit(root);
   }
 
   async _runAsStep(stepInfo: { title: string, category: 'hook' | 'fixture', location?: Location, group?: string }, cb: () => Promise<any>) {
@@ -723,3 +732,13 @@ export class StepSkipError extends Error {
 }
 
 const stepSymbol = Symbol('step');
+
+function toReportedParams(params: Record<string, any> | undefined): Record<string, any> | undefined {
+  if (!params)
+    return undefined;
+  try {
+    return JSON.parse(JSON.stringify(params));
+  } catch {
+    return undefined;
+  }
+}

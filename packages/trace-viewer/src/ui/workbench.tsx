@@ -21,7 +21,8 @@ import { CallTab } from './callTab';
 import { LogTab } from './logTab';
 import { ErrorsTab, useErrorsTabModel } from './errorsTab';
 import { ConsoleTab, useConsoleTabModel } from './consoleTab';
-import type { TraceModel, SourceLocation, ActionTraceEventInContext, SourceModel } from '@isomorphic/trace/traceModel';
+import type { TraceModel, SourceLocation, SourceModel } from '@isomorphic/trace/traceModel';
+import type { ActionEntry } from '@isomorphic/trace/entries';
 import { NetworkTab, useNetworkTabModel } from './networkTab';
 import { SnapshotTabsView, collectSnapshots, extendSnapshot } from './snapshotTab';
 import { SourceTab } from './sourceTab';
@@ -57,7 +58,7 @@ export type WorkbenchProps = {
   isLive?: boolean;
   hideTimeline?: boolean;
   status?: UITestStatus;
-  annotations?: TestAnnotation[];
+  defaultAnnotations?: TestAnnotation[];
   inert?: boolean;
   onOpenExternally?: (location: SourceLocation) => void;
   revealSource?: boolean;
@@ -72,7 +73,9 @@ export const Workbench: React.FunctionComponent<WorkbenchProps> = props => {
 };
 
 const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition: string }> = props => {
-  const { partition, model, showSourcesFirst, rootDir, fallbackLocation, isLive, hideTimeline, status, annotations, inert, onOpenExternally, revealSource, testRunMetadata } = props;
+  const { partition, model, showSourcesFirst, rootDir, fallbackLocation, isLive, hideTimeline, status, inert, onOpenExternally, revealSource, testRunMetadata } = props;
+  // Default annotations come from the test model before the test runs, shown for the empty workbench / trace.
+  const annotations = model?.annotations ?? props.defaultAnnotations;
 
   // UI settings, shared for all models.
   const [selectedNavigatorTab, setSelectedNavigatorTab] = useSetting<string>('navigatorTab',  'actions');
@@ -98,8 +101,9 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   // Transient state
   const [highlightedElement, setHighlightedElement] = React.useState<HighlightedElement>({ lastEdited: 'none' });
   const [isInspecting, setIsInspectingState] = React.useState(false);
+  const [highlightedTime, setHighlightedTime] = React.useState<Boundaries | undefined>(undefined);
 
-  const setSelectedAction = React.useCallback((action: ActionTraceEventInContext | undefined) => {
+  const setSelectedAction = React.useCallback((action: ActionEntry | undefined) => {
     setSelectedCallId(action?.callId);
     setRevealedErrorKey(undefined);
   }, [setSelectedCallId, setRevealedErrorKey]);
@@ -111,7 +115,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     return actions?.find(a => a.callId === highlightedCallId);
   }, [actions, highlightedCallId]);
 
-  const setHighlightedAction = React.useCallback((highlightedAction: ActionTraceEventInContext | undefined) => {
+  const setHighlightedAction = React.useCallback((highlightedAction: ActionEntry | undefined) => {
     setHighlightedCallId(highlightedAction?.callId);
   }, [setHighlightedCallId]);
 
@@ -150,7 +154,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     return highlightedAction || selectedAction;
   }, [selectedAction, highlightedAction]);
 
-  const onActionSelected = React.useCallback((action: ActionTraceEventInContext) => {
+  const onActionSelected = React.useCallback((action: ActionEntry) => {
     setSelectedAction(action);
     setHighlightedAction(undefined);
   }, [setSelectedAction, setHighlightedAction]);
@@ -267,6 +271,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
       consoleModel={consoleModel}
       boundaries={boundaries}
       selectedTime={selectedTime}
+      onEntryHovered={setHighlightedTime}
       onAccepted={m => setSelectedTime({ minimum: m.timestamp, maximum: m.timestamp })}
     />
   };
@@ -274,7 +279,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
     id: 'network',
     title: 'Network',
     count: networkModel.resources.length,
-    render: () => <NetworkTab boundaries={boundaries} networkModel={networkModel} sdkLanguage={model?.sdkLanguage ?? 'javascript'} />
+    render: () => <NetworkTab boundaries={boundaries} networkModel={networkModel} onResourceHovered={setHighlightedTime} sdkLanguage={model?.sdkLanguage ?? 'javascript'} />
   };
   const attachmentsTab: TabbedPaneTabModel = {
     id: 'attachments',
@@ -370,7 +375,7 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
   const renderMobileMoreTab = (tab: TabbedPaneTabModel) => tab.render?.() ?? tab.component;
 
   React.useEffect(() => setMobileTimelineTime(activeAction?.startTime ?? boundaries.minimum), [activeAction, boundaries.minimum]);
-  const onMobileActionSelected = React.useCallback((action: ActionTraceEventInContext) => {
+  const onMobileActionSelected = React.useCallback((action: ActionEntry) => {
     setMobileTimelineTime(action.startTime);
     onActionSelected(action);
   }, [onActionSelected]);
@@ -434,20 +439,20 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
               <MobileSnapshotPanel action={activeAction} model={model} />
               {!hideTimeline && <MobileTimelineProgress boundaries={boundaries} time={mobileTimelineTime} />}
             </> : mobileDetailTab === 'screenshot' ?
-            <>
-              <MobileScreenshotPanel model={model} time={mobileTimelineTime} />
-              {!hideTimeline && <MobileTimeline
-                actions={actions || []}
-                boundaries={boundaries}
-                time={mobileTimelineTime}
-                setTime={setMobileTimelineTime}
-                onSelected={onActionSelected}
-              />}
-            </> :
-            <div className='mobile-detail-panel'>
-              <div className='mobile-detail-title'>{activeMobileMoreTab?.title}</div>
-              {activeMobileMoreTab && renderMobileMoreTab(activeMobileMoreTab)}
-            </div>}
+              <>
+                <MobileScreenshotPanel model={model} time={mobileTimelineTime} />
+                {!hideTimeline && <MobileTimeline
+                  actions={actions || []}
+                  boundaries={boundaries}
+                  time={mobileTimelineTime}
+                  setTime={setMobileTimelineTime}
+                  onSelected={onActionSelected}
+                />}
+              </> :
+              <div className='mobile-detail-panel'>
+                <div className='mobile-detail-title'>{activeMobileMoreTab?.title}</div>
+                {activeMobileMoreTab && renderMobileMoreTab(activeMobileMoreTab)}
+              </div>}
         </section>
       </div>
     </div>;
@@ -458,9 +463,9 @@ const PartitionedWorkbench: React.FunctionComponent<WorkbenchProps & { partition
       model={model}
       boundaries={boundaries}
       onSelected={onActionSelected}
-      sdkLanguage={sdkLanguage}
       selectedTime={selectedTime}
       setSelectedTime={setSelectedTime}
+      highlightedTime={highlightedTime}
       scrubber={<PlaybackScrubber playback={playback} />}
     />}
     <SplitView
@@ -577,11 +582,11 @@ const MobileTimelineProgress: React.FC<{
 
 
 const MobileTimeline: React.FC<{
-  actions: ActionTraceEventInContext[];
+  actions: ActionEntry[];
   boundaries: Boundaries;
   time: number;
   setTime: (time: number) => void;
-  onSelected: (action: ActionTraceEventInContext) => void;
+  onSelected: (action: ActionEntry) => void;
 }> = ({ actions, boundaries, time, setTime, onSelected }) => {
   const duration = Math.max(1, boundaries.maximum - boundaries.minimum);
 
@@ -613,8 +618,8 @@ const MobileTimeline: React.FC<{
   </div>;
 };
 
-function findScreencastFrame(model: TraceModel | undefined, time: number): { sha1: string; width: number; height: number; timestamp: number } | undefined {
-  let closest: { sha1: string; width: number; height: number; timestamp: number } | undefined;
+function findScreencastFrame(model: TraceModel | undefined, time: number): { file: string; width: number; height: number; timestamp: number } | undefined {
+  let closest: { file: string; width: number; height: number; timestamp: number } | undefined;
   for (const page of model?.pages || []) {
     for (const frame of page.screencastFrames) {
       if (!closest || Math.abs(frame.timestamp - time) < Math.abs(closest.timestamp - time))
@@ -631,17 +636,17 @@ const MobileScreenshotPanel: React.FC<{
 }> = ({ model, time }) => {
   const frame = React.useMemo(() => findScreencastFrame(model, time), [model, time]);
   return <div className='mobile-screenshot-panel'>
-    {frame ? <img src={model?.createRelativeUrl(`sha1/${frame.sha1}`)} /> : <div className='mobile-screenshot-empty'>No screenshot</div>}
+    {frame ? <img src={model?.createRelativeUrl(`file/${frame.file}`)} /> : <div className='mobile-screenshot-empty'>No screenshot</div>}
   </div>;
 };
 
 const MobileSnapshotPanel: React.FC<{
-  action: ActionTraceEventInContext | undefined;
+  action: ActionEntry | undefined;
   model: TraceModel | undefined;
 }> = ({ action, model }) => {
   const [shouldPopulateCanvasFromScreenshot] = useSetting('shouldPopulateCanvasFromScreenshot', false);
   const snapshotUrl = React.useMemo(() => {
-    const snapshots = collectSnapshots(action);
+    const snapshots = collectSnapshots(model, action);
     const snapshot = snapshots.action || snapshots.after || snapshots.before;
     return model && snapshot ? extendSnapshot(model.traceUri, snapshot, shouldPopulateCanvasFromScreenshot).snapshotUrl : undefined;
   }, [action, model, shouldPopulateCanvasFromScreenshot]);

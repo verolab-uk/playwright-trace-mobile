@@ -18,10 +18,12 @@ import path from 'path';
 
 import { noColors } from '@isomorphic/colors';
 import { msToString } from '@isomorphic/formatUtils';
+import { getAsBooleanFromENV } from '@utils/env';
 
 import { TerminalReporter, formatResultFailure, formatRetry } from './base';
 import { stripAnsiEscapes } from '../util';
 
+import type { TerminalReporterOptions } from './base';
 import type { FullResult, TestCase, TestError, TestResult } from '../../types/testReporter';
 
 type GitHubLogType = 'debug' | 'notice' | 'warning' | 'error';
@@ -36,6 +38,11 @@ type GitHubLogOptions = Partial<{
 }>;
 
 class GitHubLogger {
+  newLine() {
+    // eslint-disable-next-line no-restricted-properties
+    process.stdout.write('\n');
+  }
+
   private _log(message: string, type: GitHubLogType = 'notice', options: GitHubLogOptions = {}) {
     message = message.replace(/\n/g, '%0A');
     const configs = Object.entries(options)
@@ -66,8 +73,8 @@ export class GitHubReporter extends TerminalReporter {
   githubLogger = new GitHubLogger();
   private _failedTestCount = 0;
 
-  constructor(options: { omitFailures?: boolean } = {}) {
-    super(options);
+  constructor(options: TerminalReporterOptions = {}) {
+    super({ ...options, omitTags: getAsBooleanFromENV('PLAYWRIGHT_GITHUB_OMIT_TAGS', options.omitTags) });
     this.screen = { ...this.screen, colors: noColors };
   }
 
@@ -82,6 +89,7 @@ export class GitHubReporter extends TerminalReporter {
     if (!this._shouldPrintFailureAnnotations(test))
       return;
     this._failedTestCount++;
+    this.githubLogger.newLine();
     for (const r of test.results)
       this._printFailureAnnotation(test, r, this._failedTestCount);
   }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { nodePlatform } from '@utils/nodePlatform';
+import { setCoreDir } from '@utils/stackTrace';
 import { AndroidServerLauncherImpl } from './androidServerImpl';
 import { BrowserServerLauncherImpl } from './browserServerImpl';
 import { DispatcherConnection, PlaywrightDispatcher, RootDispatcher, createPlaywright } from './server';
@@ -25,10 +25,11 @@ import type { Playwright as PlaywrightAPI } from './client/playwright';
 import type { Language } from '@isomorphic/locatorGenerators';
 
 export function createInProcessPlaywright(): PlaywrightAPI {
-  const playwright = createPlaywright({ sdkLanguage: (process.env.PW_LANG_NAME as Language | undefined) || 'javascript' });
-  const clientConnection = new Connection(nodePlatform(packageRoot));
+  const playwright = createPlaywright({ sdkLanguage: (process.env.PW_LANG_NAME as Language | undefined) || 'javascript', isClientCollocatedWithServer: true });
+  setCoreDir(packageRoot);
+  const clientConnection = new Connection();
   clientConnection.useRawBuffers();
-  const dispatcherConnection = new DispatcherConnection(true /* local */);
+  const dispatcherConnection = new DispatcherConnection(true /* in process */);
 
   // Dispatch synchronously at first.
   dispatcherConnection.onmessage = message => clientConnection.dispatch(message);

@@ -35,7 +35,7 @@ const navigate = defineTool({
     const url = await tab.checkUrlAndNavigate(params.url);
 
     response.setIncludeSnapshot();
-    response.addCode(`await page.goto('${url}');`);
+    response.addAction({ name: 'navigate', url });
   },
 });
 
@@ -50,7 +50,7 @@ const goBack = defineTabTool({
   },
 
   handle: async (tab, params, response) => {
-    await tab.page.goBack(tab.navigationTimeoutOptions);
+    await tab.page.goBack({ waitUntil: 'commit', ...tab.navigationTimeoutOptions });
     response.setIncludeSnapshot();
     response.addCode(`await page.goBack();`);
   },
@@ -68,7 +68,7 @@ const goForward = defineTabTool({
   },
 
   handle: async (tab, params, response) => {
-    await tab.page.goForward(tab.navigationTimeoutOptions);
+    await tab.page.goForward({ waitUntil: 'commit', ...tab.navigationTimeoutOptions });
     response.setIncludeSnapshot();
     response.addCode(`await page.goForward();`);
   },

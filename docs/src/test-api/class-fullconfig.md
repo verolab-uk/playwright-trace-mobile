@@ -4,11 +4,28 @@
 
 Resolved configuration which is accessible via [`property: TestInfo.config`] and is passed to the test reporters. To see the format of Playwright configuration file, please see [TestConfig] instead.
 
+## property: FullConfig.argv
+* since: v1.61
+- type: <[Array]<[string]>>
+
+Snapshot of [`process.argv`](https://nodejs.org/api/process.html#processargv)
+captured in the runner process. Useful for reading custom command-line
+arguments — for example, args supplied after the `--` separator
+(`npx playwright test -- --build-path=./out`). Playwright does not parse
+these; consumers are responsible for slicing and interpreting them with
+any argument-parsing library.
+
 ## property: FullConfig.configFile
 * since: v1.20
 - type: ?<[string]>
 
 Path to the configuration file used to run the tests. The value is an empty string if no config file was used.
+
+## property: FullConfig.failOnFlakyTests
+* since: v1.61
+- type: <[boolean]>
+
+See [`property: TestConfig.failOnFlakyTests`].
 
 ## property: FullConfig.forbidOnly
 * since: v1.10
@@ -84,7 +101,7 @@ See [`property: TestConfig.quiet`].
 
 ## property: FullConfig.reporter
 * since: v1.10
-- type: <[string]|[Array]<[Object]>|[BuiltInReporter]<"list"|"dot"|"line"|"github"|"json"|"junit"|"null"|"html">>
+- type: <[string]|[Array]<[Object]>|[BuiltInReporter]<"list"|"dot"|"line"|"github"|"json"|"junit"|"null"|"html"|"perfetto">>
   - `0` <[string]> Reporter name or module or file path
   - `1` <[Object]> An object with reporter options if any
 

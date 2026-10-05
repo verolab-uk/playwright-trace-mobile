@@ -157,10 +157,10 @@ const longhandTypes: Record<string, LonghandType> = {
   'extension': 'boolean',
   'capabilities': 'string[]',
   'saveSession': 'boolean',
-  'saveTrace': 'boolean',
   'saveVideo': 'size',
   'sharedBrowserContext': 'boolean',
   'outputDir': 'string',
+  'outputMaxSize': 'number',
   'imageResponses': 'string',
   'allowUnrestrictedFileAccess': 'boolean',
   'codegen': 'string',
@@ -181,7 +181,9 @@ const longhandTypes: Record<string, LonghandType> = {
   // timeouts
   'timeouts.action': 'number',
   'timeouts.navigation': 'number',
+  'timeouts.settle': 'number',
 
   // snapshot
   'snapshot.mode': 'string',
+  'snapshot.boxes': 'boolean',
 };

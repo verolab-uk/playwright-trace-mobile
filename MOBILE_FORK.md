@@ -4,7 +4,7 @@ This repository starts as a source snapshot of Microsoft Playwright so the trace
 
 - Main area to change: `packages/trace-viewer`
 - Upstream repository: https://github.com/microsoft/playwright
-- Imported upstream commit: `cb3312bc04836eb0808ee97bc13cdbe820d78ac1`
+- Imported upstream commit: `1b025d7e20a026371cd5f98ba0cdce48892737c8` (v1.63.0)
 - Initial goal: make Playwright trace report usable on mobile screens.
 
 Keep upstream attribution and license files when changing or redistributing this fork.

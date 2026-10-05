@@ -21,7 +21,11 @@ APIRequestContext:
   commands:
 
     fetch:
-      title: '{method} "{url}"'
+      title: '{method}'
+      subtitle: '{url}'
+      renderParams:
+      - url
+      - method
       parameters:
         url: string
         encodedParams: string?
@@ -40,7 +44,6 @@ APIRequestContext:
         multipartData:
           type: array?
           items: FormField
-        timeout: float
         failOnStatusCode: boolean?
         ignoreHTTPSErrors: boolean?
         maxRedirects: int?
@@ -70,6 +73,7 @@ APIRequestContext:
       group: configuration
       parameters:
         indexedDB: boolean?
+        opfs: boolean?
       returns:
         cookies:
           type: array
@@ -98,3 +102,7 @@ APIResponse:
     headers:
       type: array
       items: NameValue
+    securityDetails: SecurityDetails?
+    serverAddr: RemoteAddr?
+    timing: ResourceTiming?
+    responseEndTiming: float?

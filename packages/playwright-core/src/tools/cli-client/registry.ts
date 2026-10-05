@@ -115,9 +115,9 @@ export class Registry {
 
   static async load(): Promise<Registry> {
     const sessions = new Map<string, SessionFile[]>();
-    const hashDirs = await fs.promises.readdir(baseDaemonDir).catch(() => []);
+    const hashDirs = await fs.promises.readdir(baseDaemonDir()).catch(() => []);
     for (const workspaceDirHash of hashDirs) {
-      const daemonDir = path.join(baseDaemonDir, workspaceDirHash);
+      const daemonDir = path.join(baseDaemonDir(), workspaceDirHash);
       const stat = await fs.promises.stat(daemonDir);
       if (!stat.isDirectory())
         continue;
@@ -142,9 +142,9 @@ export class Registry {
   }
 }
 
-export const baseDaemonDir = (() => {
-  if (process.env.PLAYWRIGHT_DAEMON_SESSION_DIR)
-    return process.env.PLAYWRIGHT_DAEMON_SESSION_DIR;
+function computeBaseDaemonDir(): string {
+  if (process.env.PWTEST_DAEMON_SESSION_DIR)
+    return process.env.PWTEST_DAEMON_SESSION_DIR;
 
   let localCacheDir: string | undefined;
   if (process.platform === 'linux')
@@ -156,7 +156,13 @@ export const baseDaemonDir = (() => {
   if (!localCacheDir)
     throw new Error('Unsupported platform: ' + process.platform);
   return path.join(localCacheDir, 'ms-playwright', 'daemon');
-})();
+}
+
+let _baseDaemonDir: string | undefined;
+
+export function baseDaemonDir(): string {
+  return _baseDaemonDir ??= computeBaseDaemonDir();
+}
 
 export function createClientInfo(): ClientInfo {
   const workspaceDir = findWorkspaceDir(process.cwd());
@@ -189,7 +195,7 @@ function findWorkspaceDir(startDir: string): string | undefined {
 }
 
 const daemonProfilesDir = (workspaceDirHash: string) => {
-  return path.join(baseDaemonDir, workspaceDirHash);
+  return path.join(baseDaemonDir(), workspaceDirHash);
 };
 
 export function explicitSessionName(sessionName?: string): string | undefined {

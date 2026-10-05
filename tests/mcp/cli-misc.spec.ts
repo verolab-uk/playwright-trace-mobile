@@ -40,9 +40,26 @@ test('install workspace', async ({ cli }, testInfo) => {
   expect(fs.existsSync(playwrightDir)).toBe(true);
 });
 
+test('install adds .playwright-cli/ to .gitignore', async ({ cli }, testInfo) => {
+  const outsideGitRepo = await cli('install');
+  expect(outsideGitRepo.output).not.toContain('.gitignore');
+  expect(fs.existsSync(testInfo.outputPath('.gitignore'))).toBe(false);
+
+  await fs.promises.mkdir(testInfo.outputPath('.git'), { recursive: true });
+  await fs.promises.writeFile(testInfo.outputPath('.gitignore'), 'node_modules/');
+  const insideGitRepo = await cli('install');
+  expect(insideGitRepo.output).toContain('Added `.playwright-cli/` to `.gitignore`.');
+  const expectedContent = 'node_modules/\n# Playwright CLI output (may contain credentials)\n.playwright-cli/\n';
+  expect(await fs.promises.readFile(testInfo.outputPath('.gitignore'), 'utf8')).toBe(expectedContent);
+
+  const secondRun = await cli('install');
+  expect(secondRun.output).not.toContain('.gitignore');
+  expect(await fs.promises.readFile(testInfo.outputPath('.gitignore'), 'utf8')).toBe(expectedContent);
+});
+
 test('install workspace w/skills', async ({ cli }, testInfo) => {
   const { output } = await cli('install', '--skills');
-  expect(output).toContain(`Skills installed to \`.claude${path.sep}skills${path.sep}playwright-cli\`.`);
+  expect(output).toContain(`Skill installed to \`.claude${path.sep}skills${path.sep}playwright-cli\`.`);
 
   const skillFile = testInfo.outputPath('.claude', 'skills', 'playwright-cli', 'SKILL.md');
   expect(fs.existsSync(skillFile)).toBe(true);
@@ -54,10 +71,36 @@ test('install workspace w/skills', async ({ cli }, testInfo) => {
 
 test('install workspace w/--skills=agents', async ({ cli }, testInfo) => {
   const { output } = await cli('install', '--skills=agents');
-  expect(output).toContain(`Skills installed to \`.agents${path.sep}skills${path.sep}playwright-cli\`.`);
+  expect(output).toContain(`Skill installed to \`.agents${path.sep}skills${path.sep}playwright-cli\`.`);
 
   const skillFile = testInfo.outputPath('.agents', 'skills', 'playwright-cli', 'SKILL.md');
   expect(fs.existsSync(skillFile)).toBe(true);
+});
+
+test('install w/--skills -g installs into the home directory', async ({ cli }, testInfo) => {
+  const fakeHome = testInfo.outputPath('fake-home');
+  await fs.promises.mkdir(fakeHome, { recursive: true });
+  const { output } = await cli('install', '--skills', '-g', { env: { HOME: fakeHome, USERPROFILE: fakeHome } });
+  expect(output).toContain('Skill installed to');
+  expect(output).not.toContain('Workspace initialized');
+
+  const skillFile = path.join(fakeHome, '.claude', 'skills', 'playwright-cli', 'SKILL.md');
+  expect(fs.existsSync(skillFile)).toBe(true);
+});
+
+test('install w/--skills=agents --global installs into the home directory', async ({ cli }, testInfo) => {
+  const fakeHome = testInfo.outputPath('fake-home');
+  await fs.promises.mkdir(fakeHome, { recursive: true });
+  await cli('install', '--skills=agents', '--global', { env: { HOME: fakeHome, USERPROFILE: fakeHome } });
+
+  const skillFile = path.join(fakeHome, '.agents', 'skills', 'playwright-cli', 'SKILL.md');
+  expect(fs.existsSync(skillFile)).toBe(true);
+});
+
+test('install -g without --skills errors', async ({ cli }) => {
+  const result = await cli('install', '-g');
+  expect(result.exitCode).toBe(1);
+  expect(result.error).toContain('--global requires --skills');
 });
 
 test('install handles browser detection', async ({ cli }) => {
@@ -66,4 +109,20 @@ test('install handles browser detection', async ({ cli }) => {
   const foundMatch = output.match(/Found ((?:chrome|msedge)[\w-]*), will use it as the default browser\./m);
   if (foundMatch?.[1] !== 'chrome')
     expect(output).toContain(`Created default config for ${foundMatch?.[1] ?? 'chromium'}.`);
+});
+
+test('open with very long session name (issue 40878)', async ({ cli, server }) => {
+  // Long session names push the unix socket path past sun_path's 104-byte limit on macOS.
+  const longSessionName = 'awesome-coding-agent-orchestrators-with-an-overlong-suffix-for-testing';
+  const result = await cli(`-s=${longSessionName}`, 'open', server.PREFIX);
+  expect(result.error).toBe('');
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('Page URL');
+});
+
+test('open with long multi-byte session name (issue 42153)', async ({ cli, server }) => {
+  const result = await cli('-s=セッション名がとても長い場合の動作を確認するためのテスト', 'open', server.PREFIX);
+  expect(result.error).toBe('');
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('Page URL');
 });

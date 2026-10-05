@@ -251,6 +251,16 @@ it('should allow some, but not all nested frameLocators', async ({ page }) => {
   expect(error2.message).toContain(`Frame locators are not allowed inside composite locators, while querying "locator('iframe').contentFrame().locator('div').and(locator('#iframe').contentFrame().locator('span'))`);
 });
 
+it('should keep the capture when removing a common frame prefix', async ({ page }) => {
+  await page.setContent(`<iframe id=f srcdoc="<section id=target><span>hi</span></section>"></iframe>`);
+  const inner = page.frameLocator('#f').locator('*css=section >> span');
+  await expect(page.frameLocator('#f').locator('body').locator(inner)).toHaveAttribute('id', 'target');
+
+  const captureFrame = page.locator('*css=#f').contentFrame().locator('span');
+  const error = await page.frameLocator('#f').locator('body').locator(captureFrame).count().catch(e => e);
+  expect(error.message).toContain('Can not capture the selector before diving into the frame');
+});
+
 it('should enforce same frame for has/leftOf/rightOf/above/below/near', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/frames/two-frames.html');
   const child = page.frames()[1];
@@ -273,10 +283,19 @@ it('alias methods coverage', async ({ page }) => {
   await expect(page.mainFrame().locator('button')).toHaveCount(1);
 });
 
-it('count() should not throw during navigation', async ({ page, mode }) => {
-  it.skip(mode !== 'default', 'No test hooks');
-  await page.setContent(`<div>A</div>`);
-  const __testHookBeforeQuery = () => page.goto('data:text/html,<div>A</div><div>B</div>');
-  // @ts-expect-error
-  expect(await page.locator('div').count({ __testHookBeforeQuery })).toBe(0);
+it('count() should not throw during navigation', async ({ playwright, page, server }) => {
+  const createDummySelector = () => ({
+    query(root, selector) {
+      window.location.href = './frames/one-frame.html';
+      return document.querySelector(selector);
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      window.location.href = './frames/one-frame.html';
+      return Array.from(document.querySelectorAll(selector));
+    }
+  });
+  await playwright.selectors.register('locatorCountHelper', createDummySelector);
+  await page.goto(server.PREFIX + '/frames/one-frame.html');
+  await page.frames()[1].setContent(`<div>A</div>`);
+  expect(await page.frameLocator('locatorCountHelper=iframe').locator('locatorCountHelper=div').count()).toBe(0);
 });

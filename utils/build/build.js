@@ -22,6 +22,7 @@ const chokidar = require('chokidar');
 const fs = require('fs');
 const { workspace } = require('../workspace');
 const { build, context } = require('esbuild');
+const { minimatch } = require('minimatch');
 
 /**
  * @typedef {{
@@ -80,12 +81,58 @@ function filePath(relative) {
 }
 
 /**
- * @param {string} path
+ * @param {string} p
  * @returns {string}
  */
-function quotePath(path) {
-  return "\"" + path + "\"";
+function toPosixPath(p) {
+  return p.split(path.sep).join('/');
 }
+
+/**
+ * Chokidar v4 dropped glob support: watch the static directory prefix of a
+ * glob instead, and filter emitted paths with `pathMatcher`.
+ * @param {string} pattern
+ * @returns {string}
+ */
+function globBase(pattern) {
+  const magicIndex = pattern.search(/[*?{[]/);
+  if (magicIndex === -1)
+    return pattern;
+  return pattern.slice(0, pattern.lastIndexOf(path.sep, magicIndex));
+}
+
+/**
+ * @param {string[]} patterns absolute files, directories or globs
+ * @returns {(file: string) => boolean}
+ */
+function pathMatcher(patterns) {
+  const posixPatterns = patterns.map(toPosixPath);
+  return file => {
+    const posixFile = toPosixPath(file);
+    return posixPatterns.some(pattern => {
+      if (pattern.search(/[*?{[]/) === -1)
+        return posixFile === pattern || posixFile.startsWith(pattern + '/');
+      return minimatch(posixFile, pattern, { dot: true });
+    });
+  };
+}
+
+/**
+ * Resolve a CLI shipped by a node_modules package to an absolute path, so we
+ * can spawn it via `node` directly instead of going through `npx`/`npm exec`
+ * (which adds a shell + npm wrapper process per concurrent build).
+ * @param {string} pkg
+ * @param {string} binName
+ * @returns {string}
+ */
+function resolveNodeBin(pkg, binName) {
+  // Resolve via package.json (always allowed) rather than a subpath that may
+  // be excluded by the package's `exports` field.
+  const pkgJson = require.resolve(`${pkg}/package.json`, { paths: [ROOT] });
+  return path.join(path.dirname(pkgJson), require(pkgJson).bin[binName]);
+}
+const VITE_BIN = resolveNodeBin('vite', 'vite');
+const TSC_BIN = resolveNodeBin('typescript', 'tsc');
 
 class Step {
   /**
@@ -176,14 +223,16 @@ async function runWatch() {
         clearTimeout(timeout);
       timeout = setTimeout(callback, 500);
     };
-    chokidar.watch([...paths, ...mustExist, onChange.script].filter(Boolean).map(filePath)).on('all', reschedule);
+    chokidar.watch([...paths, ...mustExist, onChange.script].filter(Boolean).map(filePath).map(globBase)).on('all', reschedule);
     callback();
   }
 
   for (const { files, from, to, ignored } of copyFiles) {
-    const watcher = chokidar.watch([filePath(files)], { ignored });
+    const matches = pathMatcher([filePath(files)]);
+    const watcher = chokidar.watch(globBase(filePath(files)), { ignored: pathMatcher(ignored || []) });
     watcher.on('all', (event, file) => {
-      copyFile(file, from, to);
+      if ((event === 'add' || event === 'change') && matches(file))
+        copyFile(file, from, to);
     });
   }
 
@@ -202,11 +251,11 @@ async function runWatch() {
 
 async function runBuild() {
   for (const { files, from, to, ignored } of copyFiles) {
-    const watcher = chokidar.watch([filePath(files)], {
-      ignored
-    });
+    const matches = pathMatcher([filePath(files)]);
+    const watcher = chokidar.watch(globBase(filePath(files)), { ignored: pathMatcher(ignored || []) });
     watcher.on('add', file => {
-      copyFile(file, from, to);
+      if (matches(file))
+        copyFile(file, from, to);
     });
     await new Promise(x => watcher.once('ready', x));
     watcher.close();
@@ -320,9 +369,14 @@ class EsbuildStep extends Step {
     this._context = await context(this._options);
     disposables.push(() => this._context?.dispose());
 
-    const watcher = chokidar.watch([...this._options.entryPoints, ...(this._watchPaths || [])]);
+    const watchPaths = [...this._options.entryPoints, ...(this._watchPaths || [])];
+    const matches = pathMatcher(watchPaths);
+    const watcher = chokidar.watch([...new Set(watchPaths.map(globBase))]);
     await new Promise(x => watcher.once('ready', x));
-    watcher.on('all', () => this._rebuild());
+    watcher.on('all', (event, file) => {
+      if (matches(file))
+        this._rebuild();
+    });
 
     await this._rebuild();
     console.log('==== Esbuild watching:', this._relativeEntryPoints().join(', '), `(started in ${Date.now() - start}ms)`);
@@ -549,6 +603,43 @@ for (const pkg of workspace.packages()) {
   }));
 }
 
+// @playwright/client — browser-targeted ESM bundle. The client tree is written
+// isomorphically; the few genuine node builtins it still imports are swapped for
+// browser stubs here (see packages/playwright-client/src/nodeStubs). esbuild's
+// `platform: 'browser'` additionally fails the build if any other builtin leaks.
+{
+  const clientNodeStub = name => filePath(`packages/playwright-client/src/nodeStubs/${name}.ts`);
+  steps.push(new EsbuildStep({
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2020',
+    entryPoints: [filePath('packages/playwright-client/src/index.ts')],
+    outfile: filePath('packages/playwright-client/lib/index.mjs'),
+    alias: {
+      'fs': clientNodeStub('fs'),
+      'path': clientNodeStub('path'),
+      'stream': clientNodeStub('stream'),
+      'util': clientNodeStub('util'),
+      'inspector': clientNodeStub('inspector'),
+      'async_hooks': clientNodeStub('async_hooks'),
+      'events': clientNodeStub('events'),
+      'crypto': clientNodeStub('crypto'),
+      // Vendored npm dep used for terminal colors; no-op in the browser.
+      'colors/safe': clientNodeStub('colors'),
+    },
+    // Provide a `process` global so isomorphic/@utils code that reads
+    // `process.env` works in the browser.
+    inject: [clientNodeStub('processShim')],
+  }, [
+    filePath('packages/playwright-client/src'),
+    filePath('packages/playwright-core/src/client'),
+    filePath('packages/isomorphic'),
+    filePath('packages/utils'),
+    filePath('packages/protocol/src'),
+  ]));
+}
+
 // Build playwright-core exported entry points.
 steps.push(new EsbuildStep({
   entryPoints: [
@@ -576,17 +667,17 @@ steps.push(new EsbuildStep({
   bundle: true,
   entryPoints: [filePath('packages/playwright-core/src/serverRegistry.js')],
   outfile: filePath('packages/playwright-core/lib/serverRegistry.js'),
-  external: ['fsevents'],
 }, [filePath('packages/playwright-core/src/*')]));
 
 const playwrightCoreSrc = filePath('packages/playwright-core/src');
+const commonUtilsSrc = [filePath('packages/protocol/src'), filePath('packages/utils'), filePath('packages/isomorphic')];
 
 // playwright-core/lib/utilsBundle.js — bundled npm utilities barrel.
 steps.push(new EsbuildStep({
   bundle: true,
   entryPoints: [filePath('packages/playwright-core/src/utilsBundle.ts')],
   outfile: filePath('packages/playwright-core/lib/utilsBundle.js'),
-  external: ['fsevents', 'express', '@anthropic-ai/sdk'],
+  external: ['express', '@anthropic-ai/sdk'],
   alias: {
     'raw-body': filePath('utils/build/raw-body.ts'),
   },
@@ -619,7 +710,7 @@ steps.push(new EsbuildStep({
     setup: build => build.onResolve({ filter: /utilsBundle/ },
         () => ({ path: './utilsBundle', external: true })),
   }, dynamicImportToRequirePlugin],
-}, [playwrightCoreSrc]));
+}, [playwrightCoreSrc, ...commonUtilsSrc, filePath('packages/injected')]));
 
 function assertCoreBundleHasNoNodeModules() {
   const bundlePath = filePath('packages/playwright-core/lib/coreBundle.js');
@@ -645,9 +736,11 @@ function assertCoreBundleHasNoNodeModules() {
 steps.push(new CustomCallbackStep(assertCoreBundleHasNoNodeModules));
 
 // playwright/lib/transform/esmLoader.js — bundled ESM loader registered by
-// common/esmLoaderHost.ts via node:module register. Output sits next to
-// babelBundle.js so source-relative `./babelBundle` matches the runtime
-// sibling external.
+// transform.ts via node:module register. Output sits next to babelBundle.js
+// so source-relative `./babelBundle` matches the runtime sibling external.
+// '../transform/esmLoader.js' is also external: transform.ts has a
+// require.resolve() for it (dead code in this bundle, but esbuild still
+// parses it).
 {
   const playwrightSrc = filePath('packages/playwright/src');
   steps.push(new EsbuildStep({
@@ -659,9 +752,10 @@ steps.push(new CustomCallbackStep(assertCoreBundleHasNoNodeModules));
       'playwright-core/*',
       '../package',
       '../globals',
+      '../transform/esmLoader.js',
     ],
     plugins: [],
-  }, [playwrightSrc]));
+  }, [playwrightSrc, ...commonUtilsSrc]));
 }
 
 // Build playwright entry points (per-file), excluding matchers/* and
@@ -688,7 +782,7 @@ steps.push(new EsbuildStep({
     '../package',
   ],
   plugins: [dynamicImportToRequirePlugin],
-}, [filePath('packages/playwright/src')]));
+}, [filePath('packages/playwright/src'), ...commonUtilsSrc]));
 
 // playwright/lib/matchers/expect.js — bundled jest expect facade.
 steps.push(new EsbuildStep({
@@ -703,7 +797,7 @@ steps.push(new EsbuildStep({
     '../babelBundle',
   ],
   plugins: [dynamicImportToRequirePlugin],
-}, [filePath('packages/playwright/src')]));
+}, [filePath('packages/playwright/src'), ...commonUtilsSrc]));
 
 // playwright/lib/common/index.js — bundled common barrel.
 steps.push(new EsbuildStep({
@@ -721,7 +815,7 @@ steps.push(new EsbuildStep({
     '../transform/esmLoader.js',
   ],
   plugins: [dynamicImportToRequirePlugin],
-}, [filePath('packages/playwright/src')]));
+}, [filePath('packages/playwright/src'), ...commonUtilsSrc]));
 
 // playwright/lib/runner/index.js — bundled runner barrel.
 steps.push(new EsbuildStep({
@@ -747,7 +841,7 @@ steps.push(new EsbuildStep({
     __PW_HMR__: String(!!watchMode),
   },
   plugins: [dynamicImportToRequirePlugin],
-}, [filePath('packages/playwright/src')]));
+}, [filePath('packages/playwright/src'), ...commonUtilsSrc]));
 
 // playwright/lib/isomorphic/index.js — bundled isomorphic barrel.
 steps.push(new EsbuildStep({
@@ -776,7 +870,7 @@ steps.push(new EsbuildStep({
     '../transform/esmLoader',
   ],
   plugins: [dynamicImportToRequirePlugin],
-}, [filePath('packages/playwright/src')]));
+}, [filePath('packages/playwright/src'), ...commonUtilsSrc]));
 
 // playwright/lib/worker/workerProcessEntry.js — bundled worker process
 // entry. Output sits at the same depth as the source so '../X' externals
@@ -796,7 +890,7 @@ steps.push(new EsbuildStep({
     '../transform/esmLoader',
   ],
   plugins: [dynamicImportToRequirePlugin],
-}, [filePath('packages/playwright/src')]));
+}, [filePath('packages/playwright/src'), ...commonUtilsSrc]));
 
 // Build the Electron preload loader as a standalone CJS file. It runs inside
 // the Electron process (via `electron -r loader.js`) and must not depend on
@@ -854,71 +948,48 @@ const pkgSizePlugin = {
   },
 };
 
-// Build/watch trace viewer service worker.
-steps.push(new ProgramStep({
-  command: 'npx',
-  args: [
-    'vite',
-    '--config',
-    'vite.sw.config.ts',
-    'build',
-    ...(watchMode ? ['--watch', '--minify=false'] : []),
-    ...(withSourceMaps ? ['--sourcemap=inline'] : []),
-  ],
-  shell: true,
-  cwd: path.join(__dirname, '..', '..', 'packages', 'trace-viewer'),
-  concurrent: true,
-}));
-
-// Build/watch web packages.
-// HMR: in watch mode the dashboard, html-reporter, and trace viewer (incl. UI
-// mode) are served by embedded Vite dev servers, so skip their
-// `vite build --watch` steps. Set PW_HMR_STATIC=1 to keep the watch builds for
-// testing the bundled output. Recorder is not yet HMR'd. The trace viewer
-// service worker still builds via vite.sw.config.ts above — that step is not
-// in this loop.
-const hmrReplacesWebBuilds = watchMode && process.env.PW_HMR_STATIC !== '1';
-const hmrHandledPackages = new Set(['dashboard', 'html-reporter', 'trace-viewer']);
-const webPackages = ['html-reporter', 'recorder', 'trace-viewer', 'dashboard']
-    .filter(pkg => !(hmrReplacesWebBuilds && hmrHandledPackages.has(pkg)));
+// Build/watch web packages. The html-reporter, trace-viewer, and dashboard
+// also have embedded Vite dev servers used when viewing reports/traces/the
+// dashboard live, but their bundled output is consumed as a static artifact
+// in other code paths (e.g. HtmlBuilder.build() reads lib/vite/htmlReport/
+// and lib/vite/traceViewer/), so we always keep the static build alongside
+// HMR. Recorder is not yet HMR'd.
+const webPackages = ['html-reporter', 'recorder', 'trace-viewer', 'dashboard'];
 for (const webPackage of webPackages) {
   steps.push(new ProgramStep({
-    command: 'npx',
+    command: process.execPath,
     args: [
-      'vite',
+      VITE_BIN,
       'build',
       ...(watchMode ? ['--watch', '--minify=false'] : []),
       ...(withSourceMaps ? ['--sourcemap=inline'] : []),
       '--clearScreen=false',
     ],
-    shell: true,
+    shell: false,
     cwd: path.join(__dirname, '..', '..', 'packages', webPackage),
     concurrent: true,
   }));
 }
 
-// Build/watch extension UI pages and service worker.
-for (const config of ['vite.config.mts', 'vite.sw.config.mts']) {
-  steps.push(new ProgramStep({
-    command: 'npx',
-    args: [
-      'vite',
-      'build',
-      '--config',
-      config,
-      ...(watchMode ? ['--watch', '--minify=false'] : []),
-      ...(withSourceMaps ? ['--sourcemap=inline'] : []),
-      '--clearScreen=false',
-    ],
-    shell: true,
-    cwd: path.join(__dirname, '..', '..', 'packages', 'extension'),
-    concurrent: true,
-  }));
-}
+// Build/watch extension
+steps.push(new ProgramStep({
+  command: process.execPath,
+  args: [
+    VITE_BIN,
+    'build',
+    ...(watchMode ? ['--watch', '--minify=false'] : []),
+    ...(withSourceMaps ? ['--sourcemap=inline'] : []),
+    '--clearScreen=false',
+  ],
+  shell: false,
+  cwd: path.join(__dirname, '..', '..', 'packages', 'extension'),
+  concurrent: true,
+}));
 
 // Generate CLI help.
 onChanges.push({
   inputs: [
+    'packages/playwright-core/src/tools/cli-daemon/command.ts',
     'packages/playwright-core/src/tools/cli-daemon/commands.ts',
     'packages/playwright-core/src/tools/cli-daemon/helpGenerator.ts',
     'utils/generate_cli_help.js',
@@ -931,7 +1002,6 @@ onChanges.push({
   inputs: [
     'packages/injected/src/**',
     'packages/playwright-core/src/third_party/**',
-    'packages/playwright-ct-core/src/injected/**',
     'packages/isomorphic/**',
     'utils/generate_injected_builtins.js',
     'utils/generate_injected.js',
@@ -962,7 +1032,7 @@ onChanges.push({
     'packages/playwright-core/src/server/chromium/protocol.d.ts',
   ],
   mustExist: [
-    'packages/playwright-core/lib/server/deviceDescriptorsSource.json',
+    'packages/isomorphic/deviceDescriptorsSource.json',
   ],
   script: 'utils/generate_types/index.js',
 });
@@ -1001,6 +1071,21 @@ copyFiles.push({
   to: 'packages/playwright-core/lib',
 });
 
+// WebP codec: ship the WASM binary and its third-party license into lib/ next
+// to coreBundle.js, where @utils/webp/webp reads them at runtime. The .js glue
+// is inlined into coreBundle; the .wasm and .LICENSE ship as assets. The
+// license is generated from the pinned libwebp source by utils/libwebp-wasm/build.sh.
+copyFiles.push({
+  files: 'packages/utils/webp/webp_codec.wasm',
+  from: 'packages/utils/webp',
+  to: 'packages/playwright-core/lib',
+});
+copyFiles.push({
+  files: 'packages/utils/webp/webp_codec.LICENSE',
+  from: 'packages/utils/webp',
+  to: 'packages/playwright-core/lib',
+});
+
 
 copyFiles.push({
   files: 'packages/playwright/src/agents/*.md',
@@ -1014,14 +1099,9 @@ copyFiles.push({
   to: 'packages/playwright/lib',
 });
 
+// Agent skills ship as-is: SKILL.md, referenced docs and templates.
 copyFiles.push({
-  files: 'packages/playwright-core/src/tools/cli-client/skill/**/*.md',
-  from: 'packages/playwright-core/src',
-  to: 'packages/playwright-core/lib',
-});
-
-copyFiles.push({
-  files: 'packages/playwright-core/src/tools/trace/SKILL.md',
+  files: 'packages/playwright-core/src/tools/skills/**/*',
   from: 'packages/playwright-core/src',
   to: 'packages/playwright-core/lib',
 });
@@ -1035,9 +1115,9 @@ copyFiles.push({
 if (watchMode) {
   // Run TypeScript for type checking.
   steps.push(new ProgramStep({
-    command: 'npx',
-    args: ['tsc', '-w', '--preserveWatchOutput', '-p', quotePath(filePath('.'))],
-    shell: true,
+    command: process.execPath,
+    args: [TSC_BIN, '-w', '--preserveWatchOutput', '-p', filePath('.')],
+    shell: false,
     concurrent: true,
   }));
 }

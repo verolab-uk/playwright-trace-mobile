@@ -16,7 +16,7 @@
 
 import path from 'path';
 import readline from 'readline';
-import { EventEmitter } from 'stream';
+import { EventEmitter } from 'events';
 
 import { remote } from 'playwright-core/lib/coreBundle';
 import colors from 'colors/safe';
@@ -135,7 +135,6 @@ export async function runWatchModeLoop(configLocation: ConfigLocation, initialOp
   await testServerConnection.initialize({
     interceptStdio: false,
     watchTestDirs: true,
-    populateDependenciesOnList: true,
   });
   await testServerConnection.runGlobalSetup({});
 

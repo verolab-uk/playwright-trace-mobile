@@ -16,7 +16,8 @@
  */
 
 import type { Size } from '@isomorphic/types';
-import type * as channels from '@protocol/channels';
+import type { HttpCredentials } from '@protocol/structs';
+import type * as channels from './channels';
 export type { HeadersArray, Point, Quad, Rect, Size } from '@isomorphic/types';
 
 type LoggerSeverity = 'verbose' | 'info' | 'warning' | 'error';
@@ -25,7 +26,7 @@ export interface Logger {
   log(name: string, severity: LoggerSeverity, message: string | Error, args: any[], hints: { color?: string }): void;
 }
 
-export type TimeoutOptions = { timeout?: number };
+export type TimeoutOptions = { timeout?: number, signal?: AbortSignal };
 export type StrictOptions = { strict?: boolean };
 export type Headers = { [key: string]: string };
 
@@ -45,7 +46,8 @@ export type StorageState = {
 };
 export type SetStorageState = {
   cookies?: channels.SetNetworkCookie[],
-  origins?: (Omit<channels.SetOriginStorage, 'indexedDB'> & { indexedDB?: unknown[] })[]
+  origins?: (Omit<channels.SetOriginStorage, 'indexedDB'> & { indexedDB?: unknown[] })[],
+  credentials?: unknown[],
 };
 
 export type LifecycleEvent = channels.LifecycleEvent;
@@ -62,9 +64,10 @@ export type ClientCertificate = {
   passphrase?: string;
 };
 
-export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'viewport' | 'noDefaultViewport' | 'extraHTTPHeaders' | 'clientCertificates' | 'storageState' | 'recordHar' | 'colorScheme' | 'reducedMotion' | 'forcedColors' | 'acceptDownloads' | 'contrast' | 'agent'> & {
+export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'viewport' | 'noDefaultViewport' | 'extraHTTPHeaders' | 'clientCertificates' | 'storageState' | 'recordHar' | 'colorScheme' | 'reducedMotion' | 'forcedColors' | 'acceptDownloads' | 'contrast' | 'agent' | 'httpCredentials'> & {
   viewport?: Size | null;
   extraHTTPHeaders?: Headers;
+  httpCredentials?: HttpCredentials | HttpCredentials[];
   logger?: Logger;
   storageState?: string | SetStorageState;
   har?: {
@@ -146,4 +149,4 @@ export type AnnotateOptions = { duration?: number, position?: AnnotatePosition, 
 export type RemoteAddr = channels.RemoteAddr;
 export type SecurityDetails = channels.SecurityDetails;
 
-export type FrameExpectParams = Omit<channels.FrameExpectParams, 'selector'|'expression'|'expectedValue'> & { expectedValue?: any };
+export type FrameExpectParams = Omit<channels.FrameExpectParams, 'selector'|'expression'|'expectedValue'> & { expectedValue?: any, timeout: number, signal?: AbortSignal, title?: string };

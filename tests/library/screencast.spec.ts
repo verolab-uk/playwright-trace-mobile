@@ -25,8 +25,10 @@ test.skip(({ mode }) => mode !== 'default', 'screencast is not available in remo
 test.skip(({ video }) => video === 'on', 'conflicts with built-in video recording');
 test.slow();
 
-test('screencast.start delivers frames via onFrame callback', async ({ browser, server, trace }) => {
+test('screencast.start delivers frames via onFrame callback', async ({ browser, server, trace, browserName, isMac, headless }) => {
   test.skip(trace === 'on', 'trace=on has different screencast image configuration');
+  test.fixme(browserName === 'firefox' && isMac && !headless, 'wrong frame size in headed Firefox on Mac');
+
   const context = await browser.newContext({ viewport: { width: 1000, height: 400 } });
   const page = await context.newPage();
 
@@ -52,14 +54,64 @@ test('screencast.start delivers frames via onFrame callback', async ({ browser, 
   await context.close();
 });
 
-test('onFrame receives viewport size', async ({ browser, server, trace }) => {
+test('applies backpressure while async onFrame callback is pending', async ({ browser, server, trace }) => {
+  test.skip(trace === 'on', 'trace recording acknowledges screencast frames independently');
+
+  const context = await browser.newContext({ viewport: { width: 500, height: 400 } });
+  const page = await context.newPage();
+
+  let releaseCallback: () => void;
+  const callbackDone = new Promise<void>(f => releaseCallback = f);
+  let firstFrame: () => void;
+  const firstFrameReceived = new Promise<void>(f => firstFrame = f);
+  let frameCount = 0;
+  let lastFrameTimestamp = 0;
+  await page.screencast.start({
+    onFrame: async () => {
+      ++frameCount;
+      lastFrameTimestamp = Date.now();
+      firstFrame();
+      await callbackDone;
+    },
+  });
+  await page.goto(server.EMPTY_PAGE);
+  await page.evaluate(() => {
+    const animate = () => {
+      document.body.style.backgroundColor = document.body.style.backgroundColor === 'red' ? 'blue' : 'red';
+      requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  });
+  await firstFrameReceived;
+  await expect.poll(() => Date.now() - lastFrameTimestamp, { timeout: 30000 }).toBeGreaterThan(1000);
+
+  const framesWhileBlocked = frameCount;
+  await ensureSomeFrames(page);
+  expect(frameCount).toBe(framesWhileBlocked);
+
+  releaseCallback!();
+  await expect.poll(async () => {
+    await page.evaluate(() => {
+      document.body.style.backgroundColor = document.body.style.backgroundColor === 'red' ? 'blue' : 'red';
+    });
+    await ensureSomeFrames(page);
+    return frameCount;
+  }, { timeout: 30000 }).toBeGreaterThan(framesWhileBlocked);
+
+  await page.screencast.stop();
+  await context.close();
+});
+
+test('onFrame receives viewport size', async ({ browser, server, trace, browserName, isMac, headless }) => {
   test.skip(trace === 'on', 'trace=on has different screencast image configuration');
+  test.fixme(browserName === 'firefox' && isMac && !headless, 'wrong frame size in headed Firefox on Mac');
+
   const context = await browser.newContext({ viewport: { width: 1000, height: 400 } });
   const page = await context.newPage();
 
-  const frames: { viewportWidth: number, viewportHeight: number }[] = [];
+  const frames: { timestamp: number, viewportWidth: number, viewportHeight: number }[] = [];
   await page.screencast.start({
-    onFrame: ({ viewportWidth, viewportHeight }) => frames.push({ viewportWidth, viewportHeight }),
+    onFrame: ({ timestamp, viewportWidth, viewportHeight }) => frames.push({ timestamp, viewportWidth, viewportHeight }),
     size: { width: 500, height: 400 },
   });
   await page.goto(server.EMPTY_PAGE);
@@ -70,6 +122,7 @@ test('onFrame receives viewport size', async ({ browser, server, trace }) => {
   for (const frame of frames) {
     expect(frame.viewportWidth).toBe(1000);
     expect(frame.viewportHeight).toBe(400);
+    expect(typeof frame.timestamp).toBe('number');
   }
 
   await context.close();
@@ -150,6 +203,7 @@ test('start/stop twice without path creates two files in artifactsDir', async ({
 
 test('start should work when recordVideo is set', async ({ browser }, testInfo) => {
   test.slow();
+
   const autoDir = testInfo.outputPath('auto');
   const manualDir = testInfo.outputPath('manual');
   const context = await browser.newContext({
@@ -200,7 +254,6 @@ test('start should finish when page is closed', async ({ browser }, testInfo) =>
 });
 
 test('empty video', async ({ browser }, testInfo) => {
-  test.slow();
   const size = { width: 800, height: 800 };
   const context = await browser.newContext({ viewport: size });
   const page = await context.newPage();

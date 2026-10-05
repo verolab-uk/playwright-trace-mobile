@@ -29,6 +29,7 @@ export type JsonConfig = Pick<reporterTypes.FullConfig, 'configFile' | 'globalTi
   // optional for backwards compatibility
   tags?: reporterTypes.FullConfig['tags'],
   webServer?: reporterTypes.FullConfig['webServer'],
+  failOnFlakyTests?: reporterTypes.FullConfig['failOnFlakyTests'],
 };
 
 export type JsonPattern = {
@@ -107,7 +108,9 @@ export type JsonTestStepStart = {
   id: string;
   parentStepId?: string;
   title: string;
+  subtitle?: string;
   category: string,
+  params?: Record<string, any>;
   startTime: number;
   location?: reporterTypes.Location;
 };
@@ -647,6 +650,19 @@ export class TeleSuite implements reporterTypes.Suite {
     suite.parent = this;
     this._entries.push(suite);
   }
+
+  skip(_reason?: string): void {
+    throw new Error('Disposition methods are not supported on a TeleSuite (read-only).');
+  }
+  fixme(_reason?: string): void {
+    throw new Error('Disposition methods are not supported on a TeleSuite (read-only).');
+  }
+  fail(_reason?: string): void {
+    throw new Error('Disposition methods are not supported on a TeleSuite (read-only).');
+  }
+  exclude(): void {
+    throw new Error('Disposition methods are not supported on a TeleSuite (read-only).');
+  }
 }
 
 export class TeleTestCase implements reporterTypes.TestCase {
@@ -692,11 +708,26 @@ export class TeleTestCase implements reporterTypes.TestCase {
     this.results.push(result);
     return result;
   }
+
+  skip(_reason?: string): void {
+    throw new Error('Disposition methods are not supported on a TeleTestCase (read-only).');
+  }
+  fixme(_reason?: string): void {
+    throw new Error('Disposition methods are not supported on a TeleTestCase (read-only).');
+  }
+  fail(_reason?: string): void {
+    throw new Error('Disposition methods are not supported on a TeleTestCase (read-only).');
+  }
+  exclude(): void {
+    throw new Error('Disposition methods are not supported on a TeleTestCase (read-only).');
+  }
 }
 
 class TeleTestStep implements reporterTypes.TestStep {
   title: string;
+  subtitle: string | undefined;
   category: string;
+  params: Record<string, any> | undefined;
   location: reporterTypes.Location | undefined;
   parent: reporterTypes.TestStep | undefined;
   duration: number = -1;
@@ -710,7 +741,9 @@ class TeleTestStep implements reporterTypes.TestStep {
 
   constructor(payload: JsonTestStepStart, parentStep: reporterTypes.TestStep | undefined, location: reporterTypes.Location | undefined, result: TeleTestResult) {
     this.title = payload.title;
+    this.subtitle = payload.subtitle;
     this.category = payload.category;
+    this.params = payload.params;
     this.location = location;
     this.parent = parentStep;
     this._startTime = payload.startTime;
@@ -779,6 +812,8 @@ export class TeleTestResult implements reporterTypes.TestResult {
 export type TeleFullProject = reporterTypes.FullProject;
 
 export const baseFullConfig: reporterTypes.FullConfig = {
+  argv: [],
+  failOnFlakyTests: false,
   forbidOnly: false,
   fullyParallel: false,
   globalSetup: null,
