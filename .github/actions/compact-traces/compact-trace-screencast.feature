@@ -1,24 +1,23 @@
-# language: zh-TW
-功能: 測試報告的錄影瘦身
-  E2E 跑完後，把錄影裡重複的截圖刪掉，讓手機打開報告比較快，
-  但看得出變化的畫面一張都不能少。
+Feature: Compact trace screencasts
+  After the tests run, remove repeated screenshots from the screencast so the
+  report opens faster on a phone, without losing any frame that shows a change.
 
-  場景: 畫面停著不動時，重複的截圖只留一張
-    假如 錄影裡有一段畫面停著不動，連續兩張截圖幾乎一樣
-    當 我把錄影瘦身
-    那麼 這段只剩一張截圖
+  Scenario: A still screen keeps only one of its repeated screenshots
+    Given the screencast has a still screen with two nearly identical screenshots in a row
+    When I compact the screencast
+    Then only one screenshot of that stretch is left
 
-  場景: 剛按下按鈕的那段，截圖全部留著
-    假如 錄影裡我按了一個按鈕，按的過程中有兩張截圖
-    當 我把錄影瘦身
-    那麼 按的過程中的兩張截圖都還在
+  Scenario: Screenshots taken while pressing a button are all kept
+    Given the screencast has two screenshots taken while I press a button
+    When I compact the screencast
+    Then both screenshots taken while pressing are still there
 
-  場景: 畫面上只多了一行字，兩張都留著
-    假如 錄影裡前後兩張截圖，只差在後面那張多了一行字
-    當 我把錄影瘦身
-    那麼 兩張截圖都還在
+  Scenario: Two screenshots that differ by one line of text are both kept
+    Given the screencast has two screenshots where the second one has one extra line of text
+    When I compact the screencast
+    Then both screenshots are still there
 
-  場景: 畫面明顯不同，兩張都留著
-    假如 錄影裡前後兩張截圖的畫面完全不同
-    當 我把錄影瘦身
-    那麼 兩張截圖都還在
+  Scenario: Two clearly different screenshots are both kept
+    Given the screencast has two screenshots that look completely different
+    When I compact the screencast
+    Then both screenshots are still there

@@ -24,7 +24,7 @@ export const test = base.extend({
 
 const { Given, When, Then } = createBdd(test);
 
-Given('錄影裡有一段畫面停著不動，連續兩張截圖幾乎一樣', async ({ recording }) => {
+Given('the screencast has a still screen with two nearly identical screenshots in a row', async ({ recording }) => {
   recording.frames = ['idle-1.jpeg', 'idle-2.jpeg'];
   await writeTrace(recording.file, [frame('idle-1.jpeg', 1000), frame('idle-2.jpeg', 1300)], {
     'idle-1.jpeg': image(BLUE),
@@ -32,7 +32,7 @@ Given('錄影裡有一段畫面停著不動，連續兩張截圖幾乎一樣', a
   });
 });
 
-Given('錄影裡我按了一個按鈕，按的過程中有兩張截圖', async ({ recording }) => {
+Given('the screencast has two screenshots taken while I press a button', async ({ recording }) => {
   recording.frames = ['press-1.jpeg', 'press-2.jpeg'];
   await writeTrace(
     recording.file,
@@ -46,7 +46,7 @@ Given('錄影裡我按了一個按鈕，按的過程中有兩張截圖', async (
   );
 });
 
-Given('錄影裡前後兩張截圖，只差在後面那張多了一行字', async ({ recording }) => {
+Given('the screencast has two screenshots where the second one has one extra line of text', async ({ recording }) => {
   recording.frames = ['before-text.jpeg', 'after-text.jpeg'];
   await writeTrace(recording.file, [frame('before-text.jpeg', 1000), frame('after-text.jpeg', 1300)], {
     'before-text.jpeg': image(BLUE),
@@ -54,7 +54,7 @@ Given('錄影裡前後兩張截圖，只差在後面那張多了一行字', asyn
   });
 });
 
-Given('錄影裡前後兩張截圖的畫面完全不同', async ({ recording }) => {
+Given('the screencast has two screenshots that look completely different', async ({ recording }) => {
   recording.frames = ['blue.jpeg', 'white.jpeg'];
   await writeTrace(recording.file, [frame('blue.jpeg', 1000), frame('white.jpeg', 1300)], {
     'blue.jpeg': image(BLUE),
@@ -62,15 +62,15 @@ Given('錄影裡前後兩張截圖的畫面完全不同', async ({ recording }) 
   });
 });
 
-When('我把錄影瘦身', async ({ recording }) => {
+When('I compact the screencast', async ({ recording }) => {
   await compactTrace(recording.file);
 });
 
-Then('這段只剩一張截圖', async ({ recording }) => {
+Then('only one screenshot of that stretch is left', async ({ recording }) => {
   expect(await remainingFrames(recording.file)).toHaveLength(1);
 });
 
-Then(/^(?:按的過程中的)?兩張截圖都還在$/, async ({ recording }) => {
+Then(/^both screenshots (?:taken while pressing )?are still there$/, async ({ recording }) => {
   expect(await remainingFrames(recording.file)).toEqual(recording.frames);
 });
 
