@@ -7,6 +7,11 @@ Feature: Compact trace screencasts
     When I compact the screencast
     Then only one screenshot of that stretch is left
 
+  Scenario: A still screen recorded by Playwright 1.63+ keeps only one of its repeated screenshots
+    Given a Playwright 1.63+ screencast has a still screen with two nearly identical screenshots in a row
+    When I compact the screencast
+    Then only one screenshot of that stretch is left
+
   Scenario: Screenshots taken while pressing a button are all kept
     Given the screencast has two screenshots taken while I press a button
     When I compact the screencast

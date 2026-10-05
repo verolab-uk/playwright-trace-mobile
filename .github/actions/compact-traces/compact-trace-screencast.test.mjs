@@ -1,15 +1,9 @@
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
 import { expect } from '@playwright/test';
+import jpegjs from 'jpeg-js';
 import { createBdd, test as base } from 'playwright-bdd';
-import { compactTrace } from './compact-trace-screencast.ts';
-
-const require = createRequire(import.meta.url);
-const playwrightCoreDir = path.dirname(require.resolve('playwright-core/package.json'));
-const { jpegjs } = require(path.join(playwrightCoreDir, 'lib/utilsBundle.js'));
-const { yazl } = require(path.join(playwrightCoreDir, 'lib/zipBundle.js'));
-const { ZipFile } = require(path.join(playwrightCoreDir, 'lib/server/utils/zipFile.js'));
+import yazl from 'yazl';
+import { compactTrace, readZipEntries } from './compact-trace-screencast.ts';
 
 const WIDTH = 80;
 const HEIGHT = 45;
@@ -29,6 +23,14 @@ Given('the screencast has a still screen with two nearly identical screenshots i
   await writeTrace(recording.file, [frame('idle-1.jpeg', 1000), frame('idle-2.jpeg', 1300)], {
     'idle-1.jpeg': image(BLUE),
     'idle-2.jpeg': image(BLUE),
+  });
+});
+
+Given('a Playwright 1.63+ screencast has a still screen with two nearly identical screenshots in a row', async ({ recording }) => {
+  recording.frames = ['screencast/page@1-1000.jpeg', 'screencast/page@1-1300.jpeg'];
+  await writeTrace(recording.file, [fileFrame('screencast/page@1-1000.jpeg', 1000), fileFrame('screencast/page@1-1300.jpeg', 1300)], {
+    'screencast/page@1-1000.jpeg': image(BLUE),
+    'screencast/page@1-1300.jpeg': image(BLUE),
   });
 });
 
@@ -78,6 +80,10 @@ function frame(sha1, timestamp) {
   return { type: 'screencast-frame', pageId: 'page@1', sha1, width: 800, height: 450, timestamp };
 }
 
+function fileFrame(file, timestamp) {
+  return { type: 'screencast-frame', pageId: 'page@1', file, width: 800, height: 450, timestamp };
+}
+
 function image(color, textLine) {
   const data = Buffer.alloc(WIDTH * HEIGHT * 4);
   for (let i = 0; i < WIDTH * HEIGHT; i++) data.set([...color, 255], i * 4);
@@ -93,7 +99,8 @@ async function writeTrace(file, events, images) {
   const zip = new yazl.ZipFile();
   zip.addBuffer(Buffer.from(`${events.map((e) => JSON.stringify(e)).join('\n')}\n`), '0-trace.trace');
   zip.addBuffer(Buffer.from(''), '0-trace.network');
-  for (const [name, buffer] of Object.entries(images)) zip.addBuffer(buffer, `resources/${name}`);
+  for (const [name, buffer] of Object.entries(images))
+    zip.addBuffer(buffer, name.startsWith('screencast/') ? name : `resources/${name}`);
   zip.end();
   const stream = fs.createWriteStream(file);
   zip.outputStream.pipe(stream);
@@ -104,14 +111,9 @@ async function writeTrace(file, events, images) {
 }
 
 async function remainingFrames(file) {
-  const zip = new ZipFile(file);
-  try {
-    const entries = await zip.entries();
-    const events = (await zip.read('0-trace.trace')).toString('utf8').trim().split('\n').map(JSON.parse);
-    return events
-      .filter((e) => e.type === 'screencast-frame' && entries.includes(`resources/${e.sha1}`))
-      .map((e) => e.sha1);
-  } finally {
-    zip.close();
-  }
+  const entries = await readZipEntries(file);
+  const events = entries.get('0-trace.trace').toString('utf8').trim().split('\n').map(JSON.parse);
+  return events
+    .filter((e) => e.type === 'screencast-frame' && entries.has(e.file ?? `resources/${e.sha1}`))
+    .map((e) => e.file ?? e.sha1);
 }
